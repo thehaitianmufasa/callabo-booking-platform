@@ -1,0 +1,779 @@
+{
+  "name": "External Service Integrations",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/integrate-service",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-integration-trigger",
+      "name": "Service Integration Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "service-integration-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "service-type-check",
+              "leftValue": "={{ $json.service_type }}",
+              "rightValue": "github,stripe,slack,zapier,make,airtable,notion,discord,teams",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "setup,test,update,disconnect",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-integration-request",
+      "name": "Validate Integration Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "service-router",
+              "leftValue": "={{ $json.service_type }}",
+              "rightValue": "github",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "route-service-type",
+      "name": "Route by Service Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "github-webhook-url",
+              "name": "github_webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $json.tenant_id }}&webhook_type=github",
+              "type": "string"
+            },
+            {
+              "id": "github-secret",
+              "name": "github_secret",
+              "value": "={{ 'ghsec_' + $randomString(32) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-github-integration",
+      "name": "Setup GitHub Integration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/{{ $('webhook-integration-trigger').item.json.github_owner }}/{{ $('webhook-integration-trigger').item.json.github_repo }}/hooks",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "web"
+            },
+            {
+              "name": "active",
+              "value": true
+            },
+            {
+              "name": "events",
+              "value": "{{ $('webhook-integration-trigger').item.json.github_events || ['push', 'pull_request', 'release'] }}"
+            },
+            {
+              "name": "config",
+              "value": "={{ {\n  \"url\": $('Setup GitHub Integration').item.json.github_webhook_url,\n  \"content_type\": \"json\",\n  \"secret\": $('Setup GitHub Integration').item.json.github_secret,\n  \"insecure_ssl\": \"0\"\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-github-webhook",
+      "name": "Create GitHub Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-api-credentials",
+          "name": "GitHub API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "stripe-webhook-url",
+              "name": "stripe_webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $('webhook-integration-trigger').item.json.tenant_id }}&webhook_type=stripe",
+              "type": "string"
+            },
+            {
+              "id": "stripe-secret",
+              "name": "stripe_secret",
+              "value": "={{ 'whsec_' + $randomString(32) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-stripe-integration",
+      "name": "Setup Stripe Integration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.stripe.com/v1/webhook_endpoints",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "form",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $('Setup Stripe Integration').item.json.stripe_webhook_url }}"
+            },
+            {
+              "name": "enabled_events[]",
+              "value": "{{ $('webhook-integration-trigger').item.json.stripe_events || ['invoice.payment_succeeded', 'invoice.payment_failed', 'customer.subscription.updated'] }}"
+            },
+            {
+              "name": "description",
+              "value": "Callabo Platform Integration for {{ $('webhook-integration-trigger').item.json.tenant_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-stripe-webhook",
+      "name": "Create Stripe Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "stripe-api-credentials",
+          "name": "Stripe API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "slack-webhook-url",
+              "name": "slack_webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $('webhook-integration-trigger').item.json.tenant_id }}&webhook_type=slack",
+              "type": "string"
+            },
+            {
+              "id": "slack-verification-token",
+              "name": "slack_verification_token",
+              "value": "={{ $('webhook-integration-trigger').item.json.slack_verification_token }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-slack-integration",
+      "name": "Setup Slack Integration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/apps.event.authorizations.list",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('webhook-integration-trigger').item.json.slack_bot_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_context",
+              "value": "{{ $('webhook-integration-trigger').item.json.slack_event_context || 'app_mention,message.channels' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configure-slack-events",
+      "name": "Configure Slack Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "zapier-webhook-url",
+              "name": "zapier_webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $('webhook-integration-trigger').item.json.tenant_id }}&webhook_type=zapier",
+              "type": "string"
+            },
+            {
+              "id": "zapier-api-key",
+              "name": "zapier_api_key",
+              "value": "={{ 'zpk_' + $randomString(32) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-zapier-integration",
+      "name": "Setup Zapier Integration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $('webhook-integration-trigger').item.json.custom_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('webhook-integration-trigger').item.json.custom_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $('webhook-integration-trigger').item.json.tenant_id }}&webhook_type={{ $('webhook-integration-trigger').item.json.service_type }}"
+            },
+            {
+              "name": "events",
+              "value": "{{ $('webhook-integration-trigger').item.json.custom_events || ['*'] }}"
+            },
+            {
+              "name": "description",
+              "value": "Callabo Platform Integration"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-custom-integration",
+      "name": "Setup Custom Integration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateServiceIntegration($tenant_id: String!, $service_type: String!, $integration_name: String!, $webhook_url: String!, $webhook_secret: String!, $service_config: jsonb!, $external_id: String, $status: String!) {\n  insert_service_integrations_one(object: {\n    tenant_id: $tenant_id,\n    service_type: $service_type,\n    integration_name: $integration_name,\n    webhook_url: $webhook_url,\n    webhook_secret: $webhook_secret,\n    service_config: $service_config,\n    external_id: $external_id,\n    status: $status,\n    created_at: \"now()\"\n  }, on_conflict: {\n    constraint: service_integrations_tenant_id_service_type_key,\n    update_columns: [integration_name, webhook_url, webhook_secret, service_config, external_id, status, updated_at]\n  }) {\n    id\n    integration_name\n    service_type\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-integration-trigger').item.json.tenant_id,\n  \"service_type\": $('webhook-integration-trigger').item.json.service_type,\n  \"integration_name\": $('webhook-integration-trigger').item.json.integration_name || ($('webhook-integration-trigger').item.json.service_type + ' Integration'),\n  \"webhook_url\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? $('Setup GitHub Integration').item.json.github_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? $('Setup Stripe Integration').item.json.stripe_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'slack' ? $('Setup Slack Integration').item.json.slack_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'zapier' ? $('Setup Zapier Integration').item.json.zapier_webhook_url :\n    $env.N8N_WEBHOOK_URL + '/webhook/receive?tenant_id=' + $('webhook-integration-trigger').item.json.tenant_id + '&webhook_type=' + $('webhook-integration-trigger').item.json.service_type,\n  \"webhook_secret\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? $('Setup GitHub Integration').item.json.github_secret :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? $('Setup Stripe Integration').item.json.stripe_secret :\n    $('webhook-integration-trigger').item.json.service_type === 'zapier' ? $('Setup Zapier Integration').item.json.zapier_api_key :\n    'whsec_' + $randomString(32),\n  \"service_config\": $('webhook-integration-trigger').item.json.service_config || {},\n  \"external_id\": $json.id || $json.webhook_id || null,\n  \"status\": \"active\"\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "store-integration-config",
+      "name": "Store Integration Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/webhook-config",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "create"
+            },
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-integration-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "webhook_type",
+              "value": "={{ $('webhook-integration-trigger').item.json.service_type }}"
+            },
+            {
+              "name": "webhook_name",
+              "value": "={{ $('webhook-integration-trigger').item.json.integration_name || ($('webhook-integration-trigger').item.json.service_type + ' Integration') }}"
+            },
+            {
+              "name": "validation_rules",
+              "value": "={{ {\n  \"required_headers\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? ['x-github-event', 'x-hub-signature-256'] :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? ['stripe-signature'] :\n    $('webhook-integration-trigger').item.json.service_type === 'slack' ? ['x-slack-signature'] :\n    ['x-webhook-signature'],\n  \"allowed_ips\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? ['140.82.112.0/20', '185.199.108.0/22', '192.30.252.0/22'] :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? ['54.187.174.169', '54.187.205.235', '54.187.216.72'] :\n    [],\n  \"max_payload_size\": 1048576\n} }}"
+            },
+            {
+              "name": "target_workflows",
+              "value": "={{ [\n  $('webhook-integration-trigger').item.json.service_type === 'github' ? 'deployment' : 'notification',\n  'usage_tracking',\n  'audit_logging'\n] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-webhook-config",
+      "name": "Create Webhook Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-integration-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "system"
+            },
+            {
+              "name": "message",
+              "value": "Service integration completed: {{ $('webhook-integration-trigger').item.json.service_type }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ {\n  \"service_type\": $('webhook-integration-trigger').item.json.service_type,\n  \"integration_name\": $('webhook-integration-trigger').item.json.integration_name,\n  \"webhook_url\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? $('Setup GitHub Integration').item.json.github_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? $('Setup Stripe Integration').item.json.stripe_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'slack' ? $('Setup Slack Integration').item.json.slack_webhook_url :\n    $env.N8N_WEBHOOK_URL + '/webhook/receive',\n  \"status\": \"active\",\n  \"integration_id\": $('Store Integration Config').item.json.data.insert_service_integrations_one.id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-integration-notification",
+      "name": "Send Integration Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation LogIntegrationError($tenant_id: String!, $service_type: String!, $error_message: String!, $error_details: jsonb!) {\n  insert_integration_logs_one(object: {\n    tenant_id: $tenant_id,\n    service_type: $service_type,\n    action: \"setup_failed\",\n    status: \"error\",\n    error_message: $error_message,\n    error_details: $error_details,\n    created_at: \"now()\"\n  }) {\n    id\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-integration-trigger').item.json.tenant_id,\n  \"service_type\": $('webhook-integration-trigger').item.json.service_type,\n  \"error_message\": \"Service integration setup failed validation\",\n  \"error_details\": {\n    \"validation_errors\": \"Missing required fields or invalid service type\",\n    \"provided_fields\": Object.keys($('webhook-integration-trigger').item.json)\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-integration-error",
+      "name": "Log Integration Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"service_type\": $('webhook-integration-trigger').item.json.service_type,\n  \"tenant_id\": $('webhook-integration-trigger').item.json.tenant_id,\n  \"integration_id\": $('Store Integration Config').item.json.data.insert_service_integrations_one.id,\n  \"webhook_url\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? $('Setup GitHub Integration').item.json.github_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? $('Setup Stripe Integration').item.json.stripe_webhook_url :\n    $('webhook-integration-trigger').item.json.service_type === 'slack' ? $('Setup Slack Integration').item.json.slack_webhook_url :\n    $env.N8N_WEBHOOK_URL + '/webhook/receive',\n  \"webhook_secret\": \n    $('webhook-integration-trigger').item.json.service_type === 'github' ? $('Setup GitHub Integration').item.json.github_secret :\n    $('webhook-integration-trigger').item.json.service_type === 'stripe' ? $('Setup Stripe Integration').item.json.stripe_secret :\n    'configured'\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": \"Service integration request failed validation\",\n  \"tenant_id\": $('webhook-integration-trigger').item.json.tenant_id,\n  \"service_type\": $('webhook-integration-trigger').item.json.service_type\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 700]
+    }
+  ],
+  "connections": {
+    "Service Integration Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Integration Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Integration Request": {
+      "main": [
+        [
+          {
+            "node": "Route by Service Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Integration Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Service Type": {
+      "main": [
+        [
+          {
+            "node": "Setup GitHub Integration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Stripe Integration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Slack Integration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Zapier Integration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Custom Integration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup GitHub Integration": {
+      "main": [
+        [
+          {
+            "node": "Create GitHub Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create GitHub Webhook": {
+      "main": [
+        [
+          {
+            "node": "Store Integration Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Stripe Integration": {
+      "main": [
+        [
+          {
+            "node": "Create Stripe Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Stripe Webhook": {
+      "main": [
+        [
+          {
+            "node": "Store Integration Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Slack Integration": {
+      "main": [
+        [
+          {
+            "node": "Configure Slack Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Slack Events": {
+      "main": [
+        [
+          {
+            "node": "Store Integration Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Zapier Integration": {
+      "main": [
+        [
+          {
+            "node": "Store Integration Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Custom Integration": {
+      "main": [
+        [
+          {
+            "node": "Store Integration Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Integration Config": {
+      "main": [
+        [
+          {
+            "node": "Create Webhook Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Webhook Config": {
+      "main": [
+        [
+          {
+            "node": "Send Integration Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Integration Notification": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Integration Error": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["integrations", "external-services", "webhooks", "github", "stripe", "slack"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

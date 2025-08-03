@@ -1,0 +1,252 @@
+{
+  "name": "Default Notification Templates Setup",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/setup-default-templates",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-setup-trigger",
+      "name": "Setup Default Templates",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "setup-default-templates"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "deployment-templates",
+              "name": "deployment_templates",
+              "value": "={{ [\n  {\n    \"template_type\": \"deployment\",\n    \"template_name\": \"Deployment Success\",\n    \"subject_template\": \"🚀 Deployment Successful - {{tenant_name}} ({{environment}})\",\n    \"body_template\": \"<h2>Deployment Completed Successfully</h2>\\n<p>Hello {{tenant_name}} team,</p>\\n<p>Your application has been successfully deployed to <strong>{{environment}}</strong>.</p>\\n<h3>Details:</h3>\\n<ul>\\n<li><strong>Environment:</strong> {{environment}}</li>\\n<li><strong>Timestamp:</strong> {{timestamp}}</li>\\n<li><strong>Message:</strong> {{message}}</li>\\n</ul>\\n<p>Your application is now live and ready to use.</p>\\n<p>Best regards,<br>Callabo Platform Team</p>\",\n    \"is_html\": true,\n    \"variables\": [\"tenant_name\", \"environment\", \"timestamp\", \"message\"]\n  },\n  {\n    \"template_type\": \"deployment\",\n    \"template_name\": \"Deployment Failed\",\n    \"subject_template\": \"❌ Deployment Failed - {{tenant_name}} ({{environment}})\",\n    \"body_template\": \"<h2>Deployment Failed</h2>\\n<p>Hello {{tenant_name}} team,</p>\\n<p>Unfortunately, your deployment to <strong>{{environment}}</strong> has failed.</p>\\n<h3>Error Details:</h3>\\n<div style='background-color: #f8f9fa; padding: 10px; border-left: 4px solid #dc3545;'>\\n<code>{{message}}</code>\\n</div>\\n<h3>Next Steps:</h3>\\n<ol>\\n<li>Review the error message above</li>\\n<li>Check your deployment configuration</li>\\n<li>Contact support if you need assistance</li>\\n</ol>\\n<p>Timestamp: {{timestamp}}</p>\\n<p>Best regards,<br>Callabo Platform Team</p>\",\n    \"is_html\": true,\n    \"variables\": [\"tenant_name\", \"environment\", \"timestamp\", \"message\"]\n  }\n] }}",
+              "type": "object"
+            },
+            {
+              "id": "alert-templates",
+              "name": "alert_templates",
+              "value": "={{ [\n  {\n    \"template_type\": \"alert\",\n    \"template_name\": \"System Alert\",\n    \"subject_template\": \"🚨 System Alert - {{tenant_name}}\",\n    \"body_template\": \"<h2>System Alert</h2>\\n<p>Hello {{tenant_name}} team,</p>\\n<p>A system alert has been triggered for your application.</p>\\n<h3>Alert Details:</h3>\\n<ul>\\n<li><strong>Alert Type:</strong> {{notification_type}}</li>\\n<li><strong>Environment:</strong> {{environment}}</li>\\n<li><strong>Timestamp:</strong> {{timestamp}}</li>\\n<li><strong>Message:</strong> {{message}}</li>\\n</ul>\\n<h3>Additional Information:</h3>\\n<pre style='background-color: #f8f9fa; padding: 10px; border-radius: 4px;'>{{details}}</pre>\\n<p>Please review and take appropriate action if necessary.</p>\\n<p>Best regards,<br>Callabo Platform Team</p>\",\n    \"is_html\": true,\n    \"variables\": [\"tenant_name\", \"notification_type\", \"environment\", \"timestamp\", \"message\", \"details\"]\n  },\n  {\n    \"template_type\": \"alert\",\n    \"template_name\": \"High Priority Alert\",\n    \"subject_template\": \"🔴 URGENT: High Priority Alert - {{tenant_name}}\",\n    \"body_template\": \"<h2 style='color: #dc3545;'>🔴 HIGH PRIORITY ALERT</h2>\\n<p>Hello {{tenant_name}} team,</p>\\n<p><strong>This is a high priority alert that requires immediate attention.</strong></p>\\n<div style='background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 4px; margin: 10px 0;'>\\n<h3>Alert Details:</h3>\\n<ul>\\n<li><strong>Alert Type:</strong> {{notification_type}}</li>\\n<li><strong>Environment:</strong> {{environment}}</li>\\n<li><strong>Timestamp:</strong> {{timestamp}}</li>\\n<li><strong>Message:</strong> {{message}}</li>\\n</ul>\\n</div>\\n<h3>Additional Information:</h3>\\n<pre style='background-color: #f8f9fa; padding: 10px; border-radius: 4px;'>{{details}}</pre>\\n<p><strong>Please take immediate action to resolve this issue.</strong></p>\\n<p>Best regards,<br>Callabo Platform Team</p>\",\n    \"is_html\": true,\n    \"variables\": [\"tenant_name\", \"notification_type\", \"environment\", \"timestamp\", \"message\", \"details\"]\n  }\n] }}",
+              "type": "object"
+            },
+            {
+              "id": "welcome-templates",
+              "name": "welcome_templates",\n              \"value\": \"={{ [\n  {\n    \\\"template_type\\\": \\\"welcome\\\",\n    \\\"template_name\\\": \\\"Welcome New Tenant\\\",\n    \\\"subject_template\\\": \\\"🎉 Welcome to Callabo Platform - {{tenant_name}}\\\",\n    \\\"body_template\\\": \\\"<h2>Welcome to Callabo Platform!</h2>\\\\n<p>Hello {{tenant_name}} team,</p>\\\\n<p>Welcome to the Callabo Multi-Agent Platform! We're excited to have you on board.</p>\\\\n<h3>What's Next?</h3>\\\\n<ol>\\\\n<li>Complete your tenant setup</li>\\\\n<li>Configure your first agents</li>\\\\n<li>Set up your notification preferences</li>\\\\n<li>Deploy your first workflow</li>\\\\n</ol>\\\\n<h3>Resources:</h3>\\\\n<ul>\\\\n<li><a href='#'>Getting Started Guide</a></li>\\\\n<li><a href='#'>API Documentation</a></li>\\\\n<li><a href='#'>Support Portal</a></li>\\\\n</ul>\\\\n<p>If you have any questions, don't hesitate to reach out to our support team.</p>\\\\n<p>Best regards,<br>Callabo Platform Team</p>\\\",\n    \\\"is_html\\\": true,\n    \\\"variables\\\": [\\\"tenant_name\\\"]\n  }\n] }}\",\n              \"type\": \"object\"\n            },\n            {\n              \"id\": \"billing-templates\",\n              \"name\": \"billing_templates\",\n              \"value\": \"={{ [\n  {\n    \\\"template_type\\\": \\\"billing\\\",\n    \\\"template_name\\\": \\\"Usage Limit Warning\\\",\n    \\\"subject_template\\\": \\\"⚠️ Usage Limit Warning - {{tenant_name}}\\\",\n    \\\"body_template\\\": \\\"<h2>Usage Limit Warning</h2>\\\\n<p>Hello {{tenant_name}} team,</p>\\\\n<p>Your current usage is approaching your plan limits.</p>\\\\n<h3>Usage Details:</h3>\\\\n<ul>\\\\n<li><strong>Current Usage:</strong> {{message}}</li>\\\\n<li><strong>Plan Limit:</strong> {{details}}</li>\\\\n<li><strong>Timestamp:</strong> {{timestamp}}</li>\\\\n</ul>\\\\n<p>To avoid service interruption, consider upgrading your plan or optimizing your usage.</p>\\\\n<p>Best regards,<br>Callabo Platform Team</p>\\\",\n    \\\"is_html\\\": true,\n    \\\"variables\\\": [\\\"tenant_name\\\", \\\"message\\\", \\\"details\\\", \\\"timestamp\\\"]\n  },\n  {\n    \\\"template_type\\\": \\\"billing\\\",\n    \\\"template_name\\\": \\\"Usage Limit Exceeded\\\",\n    \\\"subject_template\\\": \\\"🚫 Usage Limit Exceeded - {{tenant_name}}\\\",\n    \\\"body_template\\\": \\\"<h2 style='color: #dc3545;'>Usage Limit Exceeded</h2>\\\\n<p>Hello {{tenant_name}} team,</p>\\\\n<p><strong>Your usage has exceeded your plan limits and services may be throttled.</strong></p>\\\\n<div style='background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 4px; margin: 10px 0;'>\\\\n<h3>Usage Details:</h3>\\\\n<ul>\\\\n<li><strong>Current Usage:</strong> {{message}}</li>\\\\n<li><strong>Plan Limit:</strong> {{details}}</li>\\\\n<li><strong>Timestamp:</strong> {{timestamp}}</li>\\\\n</ul>\\\\n</div>\\\\n<p><strong>Please upgrade your plan immediately to restore full service.</strong></p>\\\\n<p>Best regards,<br>Callabo Platform Team</p>\\\",\n    \\\"is_html\\\": true,\n    \\\"variables\\\": [\\\"tenant_name\\\", \\\"message\\\", \\\"details\\\", \\\"timestamp\\\"]\n  }\n] }}\",\n              \"type\": \"object\"\n            }\n          ]\n        },\n        \"options\": {}\n      },\n      \"id\": \"prepare-templates\",\n      \"name\": \"Prepare Template Data\",\n      \"type\": \"n8n-nodes-base.set\",\n      \"typeVersion\": 3.3,\n      \"position\": [460, 300]\n    },\n    {\n      \"parameters\": {\n        \"assignments\": {\n          \"assignments\": [\n            {\n              \"id\": \"all-templates\",\n              \"name\": \"all_templates\",\n              \"value\": \"={{ $json.deployment_templates.concat($json.alert_templates, $json.welcome_templates, $json.billing_templates) }}\",\n              \"type\": \"object\"\n            }\n          ]\n        },\n        \"options\": {}\n      },\n      \"id\": \"combine-templates\",\n      \"name\": \"Combine All Templates\",\n      \"type\": \"n8n-nodes-base.set\",\n      \"typeVersion\": 3.3,\n      \"position\": [680, 300]\n    },\n    {\n      \"parameters\": {\n        \"fieldToSplitOut\": \"all_templates\",\n        \"options\": {}\n      },\n      \"id\": \"split-templates\",\n      \"name\": \"Split Templates\",\n      \"type\": \"n8n-nodes-base.splitInBatches\",\n      \"typeVersion\": 3,\n      \"position\": [900, 300]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"={{ $env.HASURA_GRAPHQL_ENDPOINT }}\",\n        \"sendHeaders\": true,\n        \"headerParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"Content-Type\",\n              \"value\": \"application/json\"\n            },\n            {\n              \"name\": \"x-hasura-admin-secret\",\n              \"value\": \"={{ $env.HASURA_ADMIN_SECRET }}\"\n            }\n          ]\n        },\n        \"sendBody\": true,\n        \"bodyParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"query\",\n              \"value\": \"mutation CreateDefaultTemplate($tenant_id: String!, $template_type: String!, $template_name: String!, $subject_template: String!, $body_template: String!, $variables: jsonb, $is_html: Boolean!) {\\n  insert_notification_templates_one(object: {\\n    tenant_id: $tenant_id,\\n    template_type: $template_type,\\n    template_name: $template_name,\\n    subject_template: $subject_template,\\n    body_template: $body_template,\\n    variables: $variables,\\n    is_html: $is_html,\\n    is_default: true,\\n    is_active: true,\\n    created_at: \\\"now()\\\"\\n  }, on_conflict: {\\n    constraint: notification_templates_tenant_id_template_type_template_name_key,\\n    update_columns: [subject_template, body_template, variables, is_html, updated_at]\\n  }) {\\n    id\\n    template_name\\n    template_type\\n  }\\n}\"\n            },\n            {\n              \"name\": \"variables\",\n              \"value\": \"={{ {\\n  \\\"tenant_id\\\": $('webhook-setup-trigger').item.json.tenant_id,\\n  \\\"template_type\\\": $json.template_type,\\n  \\\"template_name\\\": $json.template_name,\\n  \\\"subject_template\\\": $json.subject_template,\\n  \\\"body_template\\\": $json.body_template,\\n  \\\"variables\\\": $json.variables || [],\\n  \\\"is_html\\\": $json.is_html || false\\n} }}\"\n            }\n          ]\n        },\n        \"options\": {}\n      },\n      \"id\": \"create-default-template\",\n      \"name\": \"Create Default Template\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.2,\n      \"position\": [1120, 300]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"={{ $env.HASURA_GRAPHQL_ENDPOINT }}\",\n        \"sendHeaders\": true,\n        \"headerParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"Content-Type\",\n              \"value\": \"application/json\"\n            },\n            {\n              \"name\": \"x-hasura-admin-secret\",\n              \"value\": \"={{ $env.HASURA_ADMIN_SECRET }}\"\n            }\n          ]\n        },\n        \"sendBody\": true,\n        \"bodyParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"query\",\n              \"value\": \"mutation CreateDefaultNotificationPreferences($tenant_id: String!) {\\n  insert_notification_preferences(objects: [\\n    {\\n      tenant_id: $tenant_id,\\n      notification_type: \\\"deployment\\\",\\n      channel_type: \\\"email\\\",\\n      is_enabled: true,\\n      priority: 1,\\n      rate_limit_minutes: 5\\n    },\\n    {\\n      tenant_id: $tenant_id,\\n      notification_type: \\\"alert\\\",\\n      channel_type: \\\"email\\\",\\n      is_enabled: true,\\n      priority: 1,\\n      rate_limit_minutes: 1\\n    },\\n    {\\n      tenant_id: $tenant_id,\\n      notification_type: \\\"alert\\\",\\n      channel_type: \\\"slack\\\",\\n      is_enabled: false,\\n      priority: 2,\\n      rate_limit_minutes: 1\\n    },\\n    {\\n      tenant_id: $tenant_id,\\n      notification_type: \\\"billing\\\",\\n      channel_type: \\\"email\\\",\\n      is_enabled: true,\\n      priority: 1,\\n      rate_limit_minutes: 60\\n    },\\n    {\\n      tenant_id: $tenant_id,\\n      notification_type: \\\"welcome\\\",\\n      channel_type: \\\"email\\\",\\n      is_enabled: true,\\n      priority: 1,\\n      rate_limit_minutes: 0\\n    }\\n  ], on_conflict: {\\n    constraint: notification_preferences_tenant_id_notification_type_channel_t_key,\\n    update_columns: [is_enabled, priority, rate_limit_minutes]\\n  }) {\\n    affected_rows\\n  }\\n}\"\n            },\n            {\n              \"name\": \"variables\",\n              \"value\": \"={{ {\\n  \\\"tenant_id\\\": $('webhook-setup-trigger').item.json.tenant_id\\n} }}\"\n            }\n          ]\n        },\n        \"options\": {}\n      },\n      \"id\": \"setup-default-preferences\",\n      \"name\": \"Setup Default Preferences\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.2,\n      \"position\": [1340, 200]\n    },\n    {\n      \"parameters\": {\n        \"respondWith\": \"json\",\n        \"responseBody\": \"={{ {\\n  \\\"status\\\": \\\"success\\\",\\n  \\\"message\\\": \\\"Default notification templates and preferences created\\\",\\n  \\\"tenant_id\\\": $('webhook-setup-trigger').item.json.tenant_id,\\n  \\\"templates_created\\\": $('Split Templates').context.totalItems,\\n  \\\"preferences_created\\\": $json.data.insert_notification_preferences.affected_rows\\n} }}\",\n        \"options\": {}\n      },\n      \"id\": \"success-response\",\n      \"name\": \"Success Response\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [1560, 200]\n    }\n  ],\n  \"connections\": {\n    \"Setup Default Templates\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Prepare Template Data\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Prepare Template Data\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Combine All Templates\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Combine All Templates\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Split Templates\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Split Templates\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Create Default Template\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Setup Default Preferences\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Create Default Template\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Split Templates\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Setup Default Preferences\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Success Response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"pinData\": {},\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"staticData\": null,\n  \"tags\": [\"templates\", \"setup\", \"defaults\", \"notifications\", \"multi-tenant\"],\n  \"triggerCount\": 1,\n  \"updatedAt\": \"2024-07-13T00:00:00.000Z\",\n  \"versionId\": \"1\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-templates",
+      "name": "Prepare Template Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "all-templates",
+              "name": "all_templates",
+              "value": "={{ $json.deployment_templates.concat($json.alert_templates, $json.welcome_templates, $json.billing_templates) }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "combine-templates",
+      "name": "Combine All Templates",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "all_templates",
+        "options": {}
+      },
+      "id": "split-templates",
+      "name": "Split Templates",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateDefaultTemplate($tenant_id: String!, $template_type: String!, $template_name: String!, $subject_template: String!, $body_template: String!, $variables: jsonb, $is_html: Boolean!) {\n  insert_notification_templates_one(object: {\n    tenant_id: $tenant_id,\n    template_type: $template_type,\n    template_name: $template_name,\n    subject_template: $subject_template,\n    body_template: $body_template,\n    variables: $variables,\n    is_html: $is_html,\n    is_default: true,\n    is_active: true,\n    created_at: \"now()\"\n  }, on_conflict: {\n    constraint: notification_templates_tenant_id_template_type_template_name_key,\n    update_columns: [subject_template, body_template, variables, is_html, updated_at]\n  }) {\n    id\n    template_name\n    template_type\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-setup-trigger').item.json.tenant_id,\n  \"template_type\": $json.template_type,\n  \"template_name\": $json.template_name,\n  \"subject_template\": $json.subject_template,\n  \"body_template\": $json.body_template,\n  \"variables\": $json.variables || [],\n  \"is_html\": $json.is_html || false\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-default-template",
+      "name": "Create Default Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateDefaultNotificationPreferences($tenant_id: String!) {\n  insert_notification_preferences(objects: [\n    {\n      tenant_id: $tenant_id,\n      notification_type: \"deployment\",\n      channel_type: \"email\",\n      is_enabled: true,\n      priority: 1,\n      rate_limit_minutes: 5\n    },\n    {\n      tenant_id: $tenant_id,\n      notification_type: \"alert\",\n      channel_type: \"email\",\n      is_enabled: true,\n      priority: 1,\n      rate_limit_minutes: 1\n    },\n    {\n      tenant_id: $tenant_id,\n      notification_type: \"alert\",\n      channel_type: \"slack\",\n      is_enabled: false,\n      priority: 2,\n      rate_limit_minutes: 1\n    },\n    {\n      tenant_id: $tenant_id,\n      notification_type: \"billing\",\n      channel_type: \"email\",\n      is_enabled: true,\n      priority: 1,\n      rate_limit_minutes: 60\n    },\n    {\n      tenant_id: $tenant_id,\n      notification_type: \"welcome\",\n      channel_type: \"email\",\n      is_enabled: true,\n      priority: 1,\n      rate_limit_minutes: 0\n    }\n  ], on_conflict: {\n    constraint: notification_preferences_tenant_id_notification_type_channel_t_key,\n    update_columns: [is_enabled, priority, rate_limit_minutes]\n  }) {\n    affected_rows\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-setup-trigger').item.json.tenant_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-default-preferences",
+      "name": "Setup Default Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"message\": \"Default notification templates and preferences created\",\n  \"tenant_id\": $('webhook-setup-trigger').item.json.tenant_id,\n  \"templates_created\": $('Split Templates').context.totalItems,\n  \"preferences_created\": $json.data.insert_notification_preferences.affected_rows\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Setup Default Templates": {
+      "main": [
+        [
+          {
+            "node": "Prepare Template Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Template Data": {
+      "main": [
+        [
+          {
+            "node": "Combine All Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine All Templates": {
+      "main": [
+        [
+          {
+            "node": "Split Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Templates": {
+      "main": [
+        [
+          {
+            "node": "Create Default Template",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Default Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Default Template": {
+      "main": [
+        [
+          {
+            "node": "Split Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Default Preferences": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["templates", "setup", "defaults", "notifications", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

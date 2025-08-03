@@ -1,0 +1,849 @@
+{
+  "name": "Customer Notification System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/send-notification",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-notification-trigger",
+      "name": "Notification Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "notification-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "notification-type-check",
+              "leftValue": "={{ $json.notification_type }}",
+              "rightValue": "deployment,alert,welcome,billing,system,custom",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "message-check",
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-notification",
+      "name": "Validate Notification Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query GetNotificationPreferences($tenant_id: String!, $notification_type: String!) {\n  notification_preferences(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      notification_type: {_eq: $notification_type},\n      is_enabled: {_eq: true}\n    }\n  ) {\n    id\n    channel_type\n    channel_config\n    template_id\n    priority\n    rate_limit_minutes\n    last_sent_at\n  }\n  tenants_by_pk(id: $tenant_id) {\n    id\n    name\n    contact_email\n    slack_webhook_url\n    sms_number\n    notification_settings\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-notification-trigger').item.json.tenant_id,\n  \"notification_type\": $('webhook-notification-trigger').item.json.notification_type\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-notification-prefs",
+      "name": "Get Notification Preferences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notification-id",
+              "name": "notification_id",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $('webhook-notification-trigger').item.json.tenant_id }}-{{ $randomString(8) }}",
+              "type": "string"
+            },
+            {
+              "id": "tenant-info",
+              "name": "tenant_info",
+              "value": "={{ $json.data.tenants_by_pk }}",
+              "type": "object"
+            },
+            {
+              "id": "preferences",
+              "name": "notification_preferences",
+              "value": "={{ $json.data.notification_preferences }}",
+              "type": "object"
+            },
+            {
+              "id": "original-payload",
+              "name": "original_payload",
+              "value": "={{ $('webhook-notification-trigger').item.json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-notifications",
+      "name": "Prepare Notifications",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "notification_preferences",
+        "options": {}
+      },
+      "id": "split-channels",
+      "name": "Split by Channel",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "rate-limit-check",
+              "leftValue": "={{ new Date() - new Date($json.last_sent_at || 0) }}",
+              "rightValue": "={{ ($json.rate_limit_minutes || 0) * 60 * 1000 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-rate-limit",
+      "name": "Check Rate Limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "channel-router",
+              "leftValue": "={{ $json.channel_type }}",
+              "rightValue": "email",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "channel-router",
+      "name": "Route by Channel Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query GetEmailTemplate($template_id: String!, $tenant_id: String!) {\n  notification_templates_by_pk(id: $template_id) {\n    id\n    template_type\n    subject_template\n    body_template\n    variables\n    is_html\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"template_id\": $json.template_id,\n  \"tenant_id\": $('Prepare Notifications').item.json.original_payload.tenant_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-email-template",
+      "name": "Get Email Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rendered-subject",
+              "name": "rendered_subject",
+              "value": "={{ $json.data.notification_templates_by_pk.subject_template\n  .replace(/\\{\\{tenant_name\\}\\}/g, $('Prepare Notifications').item.json.tenant_info.name)\n  .replace(/\\{\\{message\\}\\}/g, $('Prepare Notifications').item.json.original_payload.message)\n  .replace(/\\{\\{notification_type\\}\\}/g, $('Prepare Notifications').item.json.original_payload.notification_type)\n  .replace(/\\{\\{timestamp\\}\\}/g, $now.format('YYYY-MM-DD HH:mm:ss'))\n  .replace(/\\{\\{environment\\}\\}/g, $('Prepare Notifications').item.json.original_payload.environment || 'production')\n}}",
+              "type": "string"
+            },
+            {
+              "id": "rendered-body",
+              "name": "rendered_body",
+              "value": "={{ $json.data.notification_templates_by_pk.body_template\n  .replace(/\\{\\{tenant_name\\}\\}/g, $('Prepare Notifications').item.json.tenant_info.name)\n  .replace(/\\{\\{message\\}\\}/g, $('Prepare Notifications').item.json.original_payload.message)\n  .replace(/\\{\\{notification_type\\}\\}/g, $('Prepare Notifications').item.json.original_payload.notification_type)\n  .replace(/\\{\\{timestamp\\}\\}/g, $now.format('YYYY-MM-DD HH:mm:ss'))\n  .replace(/\\{\\{environment\\}\\}/g, $('Prepare Notifications').item.json.original_payload.environment || 'production')\n  .replace(/\\{\\{details\\}\\}/g, JSON.stringify($('Prepare Notifications').item.json.original_payload.details || {}, null, 2))\n}}",
+              "type": "string"
+            },
+            {
+              "id": "is-html",
+              "name": "is_html",
+              "value": "={{ $json.data.notification_templates_by_pk.is_html || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "render-email-template",
+      "name": "Render Email Template",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_EMAIL || 'noreply@callabo-platform.com' }}",
+        "toEmail": "={{ $('Check Rate Limit').item.json.channel_config?.email || $('Prepare Notifications').item.json.tenant_info.contact_email }}",
+        "subject": "={{ $json.rendered_subject }}",
+        "message": "={{ $json.rendered_body }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "html": "={{ $json.is_html }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2220, 200],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-credentials",
+          "name": "SMTP Email Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Check Rate Limit').item.json.channel_config?.slack_webhook_url || $('Prepare Notifications').item.json.tenant_info.slack_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "🔔 *{{ $('Prepare Notifications').item.json.original_payload.notification_type.toUpperCase() }}* - {{ $('Prepare Notifications').item.json.tenant_info.name }}"
+            },
+            {
+              "name": "blocks",
+              "value": "={{ [\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": $('Prepare Notifications').item.json.original_payload.notification_type.toUpperCase() + \" Notification\"\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Tenant:*\\n\" + $('Prepare Notifications').item.json.tenant_info.name\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Time:*\\n\" + $now.format('YYYY-MM-DD HH:mm:ss')\n      }\n    ]\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*Message:*\\n\" + $('Prepare Notifications').item.json.original_payload.message\n    }\n  },\n  {\n    \"type\": \"context\",\n    \"elements\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"Environment: \" + ($('Prepare Notifications').item.json.original_payload.environment || 'production')\n      }\n    ]\n  }\n] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-slack",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "form",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $('Check Rate Limit').item.json.channel_config?.phone_number || $('Prepare Notifications').item.json.tenant_info.sms_number }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_FROM_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "{{ $('Prepare Notifications').item.json.tenant_info.name }}: {{ $('Prepare Notifications').item.json.original_payload.notification_type.toUpperCase() }} - {{ $('Prepare Notifications').item.json.original_payload.message }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-sms",
+      "name": "Send SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 400],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "twilio-credentials",
+          "name": "Twilio API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Check Rate Limit').item.json.channel_config?.webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('Check Rate Limit').item.json.channel_config?.webhook_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.notification_type }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.message }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.details }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISOString() }}"
+            },
+            {
+              "name": "environment",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.environment || 'production' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-webhook",
+      "name": "Send Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation LogNotification($notification_id: String!, $tenant_id: String!, $channel_type: String!, $notification_type: String!, $status: String!, $delivery_details: jsonb) {\n  insert_notification_logs_one(object: {\n    notification_id: $notification_id,\n    tenant_id: $tenant_id,\n    channel_type: $channel_type,\n    notification_type: $notification_type,\n    status: $status,\n    delivery_details: $delivery_details,\n    sent_at: \"now()\"\n  }) {\n    id\n    notification_id\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"notification_id\": $('Prepare Notifications').item.json.notification_id,\n  \"tenant_id\": $('Prepare Notifications').item.json.original_payload.tenant_id,\n  \"channel_type\": $('Check Rate Limit').item.json.channel_type,\n  \"notification_type\": $('Prepare Notifications').item.json.original_payload.notification_type,\n  \"status\": \"sent\",\n  \"delivery_details\": {\n    \"message_id\": $json.MessageSid || $json.ts || $json.message_id || null,\n    \"response\": $json\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-notification",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateRateLimit($preference_id: Int!) {\n  update_notification_preferences_by_pk(\n    pk_columns: {id: $preference_id},\n    _set: {last_sent_at: \"now()\"}\n  ) {\n    id\n    last_sent_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"preference_id\": $('Check Rate Limit').item.json.id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-rate-limit",
+      "name": "Update Rate Limit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-notification-trigger').item.json.callback_webhook || $env.N8N_WEBHOOK_URL }}/notification-complete",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "notification_id",
+              "value": "={{ $('Prepare Notifications').item.json.notification_id }}"
+            },
+            {
+              "name": "tenant_id",
+              "value": "={{ $('Prepare Notifications').item.json.original_payload.tenant_id }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "channels_sent",
+              "value": "={{ $('Split by Channel').context.noItemsLeft ? $runIndex + 1 : 0 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "completion-callback",
+      "name": "Completion Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 350]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-notification-trigger').item.json.callback_webhook || $env.N8N_WEBHOOK_URL }}/notification-error",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-notification-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "error",
+              "value": "{{ $json.error || 'Notification validation failed' }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-callback",
+      "name": "Error Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"notification_id\": $('Prepare Notifications').item.json.notification_id,\n  \"status\": \"success\",\n  \"tenant_id\": $('Prepare Notifications').item.json.original_payload.tenant_id,\n  \"channels_processed\": $('Split by Channel').context.noItemsLeft ? $runIndex + 1 : 0\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2660, 350]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": $json.error || \"Notification request failed validation\",\n  \"tenant_id\": $('webhook-notification-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 600]
+    }
+  ],
+  "connections": {
+    "Notification Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Notification Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Notification Request": {
+      "main": [
+        [
+          {
+            "node": "Get Notification Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notification Preferences": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notifications": {
+      "main": [
+        [
+          {
+            "node": "Split by Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split by Channel": {
+      "main": [
+        [
+          {
+            "node": "Check Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Completion Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Route by Channel Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Channel Type": {
+      "main": [
+        [
+          {
+            "node": "Get Email Template",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Email Template": {
+      "main": [
+        [
+          {
+            "node": "Render Email Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Email Template": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Notification": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Webhook": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Notification": {
+      "main": [
+        [
+          {
+            "node": "Update Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Split by Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completion Callback": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Callback": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["notifications", "multi-channel", "email", "sms", "slack", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

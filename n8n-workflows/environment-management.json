@@ -1,0 +1,649 @@
+{
+  "name": "Environment Variable Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/env-management",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-env-trigger",
+      "name": "Environment Management Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "env-management-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create,update,delete,rotate,sync",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-request",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "operation-id",
+              "name": "operation_id",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $json.tenant_id }}-{{ $json.action }}",
+              "type": "string"
+            },
+            {
+              "id": "env-prefix",
+              "name": "env_prefix",
+              "value": "={{ $json.tenant_id.toUpperCase() }}_{{ $json.environment.toUpperCase() }}_",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-operation",
+      "name": "Prepare Operation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-switch",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "action-router",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vercel.com/v9/projects/{{ $('webhook-env-trigger').item.json.vercel_project_id }}/env",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $('Prepare Operation').item.json.env_prefix }}{{ $('webhook-env-trigger').item.json.variable_name }}"
+            },
+            {
+              "name": "value",
+              "value": "={{ $('webhook-env-trigger').item.json.variable_value }}"
+            },
+            {
+              "name": "type",
+              "value": "{{ $('webhook-env-trigger').item.json.variable_type || 'encrypted' }}"
+            },
+            {
+              "name": "target",
+              "value": "{{ ['production', 'preview', 'development'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-vercel-env",
+      "name": "Create Vercel Environment Variable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateEnvironmentVariable($tenant_id: String!, $variable_name: String!, $variable_type: String!, $environment: String!, $vercel_env_id: String, $operation_id: String!) {\n  insert_environment_variables_one(object: {\n    tenant_id: $tenant_id,\n    variable_name: $variable_name,\n    variable_type: $variable_type,\n    environment: $environment,\n    vercel_env_id: $vercel_env_id,\n    operation_id: $operation_id,\n    created_at: \"now()\",\n    status: \"active\"\n  }) {\n    id\n    variable_name\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-env-trigger').item.json.tenant_id,\n  \"variable_name\": $('webhook-env-trigger').item.json.variable_name,\n  \"variable_type\": $('webhook-env-trigger').item.json.variable_type || 'encrypted',\n  \"environment\": $('webhook-env-trigger').item.json.environment,\n  \"vercel_env_id\": $json.envId,\n  \"operation_id\": $('Prepare Operation').item.json.operation_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "record-env-var",
+      "name": "Record Environment Variable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 100]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://api.vercel.com/v9/projects/{{ $('webhook-env-trigger').item.json.vercel_project_id }}/env/{{ $('webhook-env-trigger').item.json.vercel_env_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "value",
+              "value": "={{ $('webhook-env-trigger').item.json.variable_value }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-vercel-env",
+      "name": "Update Vercel Environment Variable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "https://api.vercel.com/v9/projects/{{ $('webhook-env-trigger').item.json.vercel_project_id }}/env/{{ $('webhook-env-trigger').item.json.vercel_env_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "delete-vercel-env",
+      "name": "Delete Vercel Environment Variable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "new-api-key",
+              "name": "new_api_key",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $randomString(32) }}",
+              "type": "string"
+            },
+            {
+              "id": "rotation-id",
+              "name": "rotation_id",
+              "value": "={{ $randomString(16) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-new-key",
+      "name": "Generate New API Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.vercel.com/v9/projects/{{ $('webhook-env-trigger').item.json.vercel_project_id }}/env",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "sync-vercel-envs",
+      "name": "Sync Vercel Environment Variables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation SyncEnvironmentVariables($tenant_id: String!, $environment: String!, $env_vars: [environment_variables_insert_input!]!) {\n  delete_environment_variables(where: {tenant_id: {_eq: $tenant_id}, environment: {_eq: $environment}}) {\n    affected_rows\n  }\n  insert_environment_variables(objects: $env_vars) {\n    affected_rows\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-env-trigger').item.json.tenant_id,\n  \"environment\": $('webhook-env-trigger').item.json.environment,\n  \"env_vars\": $json.envs.map(env => ({\n    \"tenant_id\": $('webhook-env-trigger').item.json.tenant_id,\n    \"variable_name\": env.key.replace($('Prepare Operation').item.json.env_prefix, ''),\n    \"variable_type\": env.type,\n    \"environment\": $('webhook-env-trigger').item.json.environment,\n    \"vercel_env_id\": env.id,\n    \"created_at\": \"now()\",\n    \"status\": \"active\"\n  }))\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sync-database-envs",
+      "name": "Sync Database Environment Variables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-env-trigger').item.json.notification_webhook || $env.N8N_WEBHOOK_URL }}/env-operation-complete",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-env-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "operation_id",
+              "value": "={{ $('Prepare Operation').item.json.operation_id }}"
+            },
+            {
+              "name": "action",
+              "value": "={{ $('webhook-env-trigger').item.json.action }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "environment",
+              "value": "={{ $('webhook-env-trigger').item.json.environment }}"
+            },
+            {
+              "name": "message",
+              "value": "Environment variable operation completed successfully"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "success-notification",
+      "name": "Send Success Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-env-trigger').item.json.notification_webhook || $env.N8N_WEBHOOK_URL }}/env-operation-error",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-env-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "operation_id",
+              "value": "={{ $('Prepare Operation').item.json.operation_id }}"
+            },
+            {
+              "name": "action",
+              "value": "={{ $('webhook-env-trigger').item.json.action }}"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.error || 'Environment variable operation failed' }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-notification",
+      "name": "Send Error Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"operation_id\": $('Prepare Operation').item.json.operation_id,\n  \"status\": \"success\",\n  \"action\": $('webhook-env-trigger').item.json.action,\n  \"tenant_id\": $('webhook-env-trigger').item.json.tenant_id,\n  \"environment\": $('webhook-env-trigger').item.json.environment\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": $json.error || \"Environment variable operation failed validation\",\n  \"tenant_id\": $('webhook-env-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 500]
+    }
+  ],
+  "connections": {
+    "Environment Management Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Operation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Operation": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Create Vercel Environment Variable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Vercel Environment Variable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Vercel Environment Variable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate New API Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sync Vercel Environment Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Vercel Environment Variable": {
+      "main": [
+        [
+          {
+            "node": "Record Environment Variable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Environment Variable": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Vercel Environment Variable": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Vercel Environment Variable": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate New API Key": {
+      "main": [
+        [
+          {
+            "node": "Update Vercel Environment Variable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Vercel Environment Variables": {
+      "main": [
+        [
+          {
+            "node": "Sync Database Environment Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Database Environment Variables": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["environment", "variables", "vercel", "multi-tenant", "management"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

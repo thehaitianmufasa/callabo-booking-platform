@@ -1,0 +1,629 @@
+{
+  "name": "Webhook Configuration Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/webhook-config",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-config-trigger",
+      "name": "Webhook Config Management",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "webhook-config-management"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create,update,delete,list,regenerate_secret,test",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-config-request",
+      "name": "Validate Config Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-switch",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "route-config-action",
+      "name": "Route Config Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "webhook-secret",
+              "name": "webhook_secret",
+              "value": "={{ 'whsec_' + $randomString(32) }}",
+              "type": "string"
+            },
+            {
+              "id": "webhook-url",
+              "name": "webhook_url",
+              "value": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive?tenant_id={{ $('webhook-config-trigger').item.json.tenant_id }}&webhook_type={{ $('webhook-config-trigger').item.json.webhook_type }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-webhook-config",
+      "name": "Generate Webhook Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateWebhookConfig($tenant_id: String!, $webhook_type: String!, $webhook_name: String!, $webhook_secret: String!, $webhook_url: String!, $validation_rules: jsonb, $transformation_rules: jsonb, $target_workflows: jsonb, $retry_config: jsonb) {\n  insert_webhook_configurations_one(object: {\n    tenant_id: $tenant_id,\n    webhook_type: $webhook_type,\n    webhook_name: $webhook_name,\n    webhook_secret: $webhook_secret,\n    webhook_url: $webhook_url,\n    validation_rules: $validation_rules,\n    transformation_rules: $transformation_rules,\n    target_workflows: $target_workflows,\n    retry_config: $retry_config,\n    is_active: true,\n    created_at: \"now()\"\n  }) {\n    id\n    webhook_name\n    webhook_url\n    webhook_type\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-config-trigger').item.json.tenant_id,\n  \"webhook_type\": $('webhook-config-trigger').item.json.webhook_type,\n  \"webhook_name\": $('webhook-config-trigger').item.json.webhook_name,\n  \"webhook_secret\": $('Generate Webhook Config').item.json.webhook_secret,\n  \"webhook_url\": $('Generate Webhook Config').item.json.webhook_url,\n  \"validation_rules\": $('webhook-config-trigger').item.json.validation_rules || {\n    \"required_headers\": [\"x-webhook-signature\"],\n    \"allowed_ips\": [],\n    \"max_payload_size\": 1048576\n  },\n  \"transformation_rules\": $('webhook-config-trigger').item.json.transformation_rules || {},\n  \"target_workflows\": $('webhook-config-trigger').item.json.target_workflows || [],\n  \"retry_config\": $('webhook-config-trigger').item.json.retry_config || {\n    \"max_retries\": 3,\n    \"retry_delay\": 1000,\n    \"backoff_factor\": 2\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-webhook-config",
+      "name": "Create Webhook Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateWebhookConfig($config_id: Int!, $webhook_name: String, $validation_rules: jsonb, $transformation_rules: jsonb, $target_workflows: jsonb, $retry_config: jsonb, $is_active: Boolean) {\n  update_webhook_configurations_by_pk(\n    pk_columns: {id: $config_id},\n    _set: {\n      webhook_name: $webhook_name,\n      validation_rules: $validation_rules,\n      transformation_rules: $transformation_rules,\n      target_workflows: $target_workflows,\n      retry_config: $retry_config,\n      is_active: $is_active,\n      updated_at: \"now()\"\n    }\n  ) {\n    id\n    webhook_name\n    is_active\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"config_id\": $('webhook-config-trigger').item.json.config_id,\n  \"webhook_name\": $('webhook-config-trigger').item.json.webhook_name,\n  \"validation_rules\": $('webhook-config-trigger').item.json.validation_rules,\n  \"transformation_rules\": $('webhook-config-trigger').item.json.transformation_rules,\n  \"target_workflows\": $('webhook-config-trigger').item.json.target_workflows,\n  \"retry_config\": $('webhook-config-trigger').item.json.retry_config,\n  \"is_active\": $('webhook-config-trigger').item.json.is_active\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-webhook-config",
+      "name": "Update Webhook Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation DeleteWebhookConfig($config_id: Int!) {\n  update_webhook_configurations_by_pk(\n    pk_columns: {id: $config_id},\n    _set: {is_active: false, deleted_at: \"now()\"}\n  ) {\n    id\n    webhook_name\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"config_id\": $('webhook-config-trigger').item.json.config_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "delete-webhook-config",
+      "name": "Delete Webhook Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query ListWebhookConfigs($tenant_id: String!) {\n  webhook_configurations(\n    where: {tenant_id: {_eq: $tenant_id}, is_active: {_eq: true}},\n    order_by: {created_at: desc}\n  ) {\n    id\n    webhook_type\n    webhook_name\n    webhook_url\n    validation_rules\n    transformation_rules\n    target_workflows\n    retry_config\n    is_active\n    created_at\n    updated_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-config-trigger').item.json.tenant_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-webhook-configs",
+      "name": "List Webhook Configs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "new-secret",
+              "name": "new_webhook_secret",
+              "value": "={{ 'whsec_' + $randomString(32) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-new-secret",
+      "name": "Generate New Secret",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation RegenerateWebhookSecret($config_id: Int!, $new_secret: String!) {\n  update_webhook_configurations_by_pk(\n    pk_columns: {id: $config_id},\n    _set: {\n      webhook_secret: $new_secret,\n      secret_rotated_at: \"now()\",\n      updated_at: \"now()\"\n    }\n  ) {\n    id\n    webhook_name\n    secret_rotated_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"config_id\": $('webhook-config-trigger').item.json.config_id,\n  \"new_secret\": $('Generate New Secret').item.json.new_webhook_secret\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-webhook-secret",
+      "name": "Update Webhook Secret",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/webhook/receive",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-webhook-signature",
+              "value": "={{ \n  (() => {\n    const crypto = require('crypto');\n    const payload = JSON.stringify({\n      \"test\": true,\n      \"tenant_id\": $('webhook-config-trigger').item.json.tenant_id,\n      \"webhook_type\": $('webhook-config-trigger').item.json.webhook_type,\n      \"message\": \"Test webhook payload\",\n      \"timestamp\": $now.toISOString()\n    });\n    const secret = $('webhook-config-trigger').item.json.webhook_secret || 'test_secret';\n    return 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');\n  })()\n}}"
+            },
+            {
+              "name": "x-tenant-id",
+              "value": "={{ $('webhook-config-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "x-webhook-type",
+              "value": "={{ $('webhook-config-trigger').item.json.webhook_type }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "test",
+              "value": true
+            },
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-config-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "webhook_type",
+              "value": "={{ $('webhook-config-trigger').item.json.webhook_type }}"
+            },
+            {
+              "name": "message",
+              "value": "Test webhook payload"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "test-webhook",
+      "name": "Test Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-config-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "system"
+            },
+            {
+              "name": "message",
+              "value": "Webhook secret rotated for {{ $('webhook-config-trigger').item.json.webhook_type }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ {\n  \"config_id\": $('webhook-config-trigger').item.json.config_id,\n  \"webhook_type\": $('webhook-config-trigger').item.json.webhook_type,\n  \"action\": \"secret_rotated\",\n  \"rotated_at\": $now.toISOString()\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-secret-rotation",
+      "name": "Notify Secret Rotation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"action\": $('webhook-config-trigger').item.json.action,\n  \"tenant_id\": $('webhook-config-trigger').item.json.tenant_id,\n  \"data\": $json.data || $json,\n  \"webhook_secret\": $('webhook-config-trigger').item.json.action === 'create' ? $('Generate Webhook Config').item.json.webhook_secret : ($('webhook-config-trigger').item.json.action === 'regenerate_secret' ? $('Generate New Secret').item.json.new_webhook_secret : undefined)\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 350]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": \"Webhook configuration request failed validation\",\n  \"tenant_id\": $('webhook-config-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Config Management": {
+      "main": [
+        [
+          {
+            "node": "Validate Config Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Config Request": {
+      "main": [
+        [
+          {
+            "node": "Route Config Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Config Action": {
+      "main": [
+        [
+          {
+            "node": "Generate Webhook Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Webhook Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Webhook Config",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Webhook Configs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate New Secret",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Test Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Webhook Config": {
+      "main": [
+        [
+          {
+            "node": "Create Webhook Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Webhook Config": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Webhook Config": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Webhook Config": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Webhook Configs": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate New Secret": {
+      "main": [
+        [
+          {
+            "node": "Update Webhook Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Webhook Secret": {
+      "main": [
+        [
+          {
+            "node": "Notify Secret Rotation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Secret Rotation": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["webhooks", "configuration", "security", "management", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

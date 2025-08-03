@@ -1,0 +1,320 @@
+{
+  "name": "Callabo Multi-Agent Platform - N8N Database Connections",
+  "version": "1.0.0",
+  "description": "Database connection configurations for N8N workflows with Supabase and Hasura integration",
+  "configurations": {
+    "supabase_postgresql": {
+      "id": "supabase-postgres-main",
+      "name": "Supabase PostgreSQL - Multi-Tenant",
+      "type": "postgres",
+      "connection": {
+        "host": "${SUPABASE_DB_HOST}",
+        "port": 5432,
+        "database": "${SUPABASE_DB_NAME}",
+        "user": "${SUPABASE_DB_USER}",
+        "password": "${SUPABASE_DB_PASSWORD}",
+        "ssl": {
+          "enabled": true,
+          "rejectUnauthorized": true,
+          "ca": "${SUPABASE_SSL_CERT_PATH}"
+        }
+      },
+      "features": {
+        "multi_tenant": true,
+        "row_level_security": true,
+        "real_time": true
+      },
+      "schemas": {
+        "primary": "public",
+        "auth": "auth",
+        "storage": "storage"
+      },
+      "tables": {
+        "tenants": "public.tenants",
+        "users": "public.users",
+        "tenant_users": "public.tenant_users",
+        "projects": "public.projects",
+        "workflows": "public.workflows",
+        "workflow_executions": "public.workflow_executions",
+        "user_onboarding": "public.user_onboarding",
+        "audit_logs": "public.audit_logs",
+        "usage_metrics": "public.usage_metrics"
+      },
+      "connection_pool": {
+        "max_connections": 20,
+        "idle_timeout": 300,
+        "connection_timeout": 10
+      },
+      "usage": [
+        "user_registration_workflow",
+        "customer_onboarding_workflow", 
+        "error_alerts_workflow"
+      ]
+    },
+    
+    "hasura_graphql": {
+      "id": "hasura-graphql-endpoint",
+      "name": "Hasura GraphQL API",
+      "type": "graphql",
+      "endpoint": {
+        "url": "${HASURA_GRAPHQL_ENDPOINT}",
+        "websocket_url": "${HASURA_GRAPHQL_WS_ENDPOINT}"
+      },
+      "authentication": {
+        "type": "bearer_token",
+        "headers": {
+          "Authorization": "Bearer ${HASURA_ADMIN_SECRET}",
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      },
+      "features": {
+        "subscriptions": true,
+        "mutations": true,
+        "real_time": true,
+        "batch_requests": true
+      },
+      "rate_limiting": {
+        "requests_per_minute": 1000,
+        "burst_limit": 100
+      },
+      "usage": [
+        "real_time_updates",
+        "tenant_operations",
+        "project_management",
+        "workflow_triggers"
+      ]
+    },
+
+    "hasura_webhook_events": {
+      "id": "hasura-event-webhooks",
+      "name": "Hasura Event Triggers",
+      "type": "webhook",
+      "endpoints": {
+        "project_created": {
+          "url": "${N8N_WEBHOOK_BASE_URL}/webhook/project-created",
+          "method": "POST",
+          "headers": {
+            "x-hasura-project-created": "true",
+            "Content-Type": "application/json"
+          }
+        },
+        "workflow_executed": {
+          "url": "${N8N_WEBHOOK_BASE_URL}/webhook/workflow-executed", 
+          "method": "POST",
+          "headers": {
+            "x-hasura-workflow-update": "true",
+            "Content-Type": "application/json"
+          }
+        },
+        "user_onboarding_progress": {
+          "url": "${N8N_WEBHOOK_BASE_URL}/webhook/onboarding-progress",
+          "method": "POST", 
+          "headers": {
+            "x-hasura-onboarding-update": "true",
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "security": {
+        "verify_signature": true,
+        "secret_header": "x-hasura-webhook-secret",
+        "allowed_ips": ["127.0.0.1", "localhost"]
+      }
+    }
+  },
+
+  "credentials": {
+    "supabase": {
+      "credential_name": "Supabase Multi-Tenant DB",
+      "type": "postgres",
+      "data": {
+        "host": "${SUPABASE_DB_HOST}",
+        "port": 5432,
+        "database": "${SUPABASE_DB_NAME}",
+        "user": "${SUPABASE_DB_USER}",
+        "password": "${SUPABASE_DB_PASSWORD}",
+        "allowUnauthorizedCerts": false,
+        "ssl": "require"
+      }
+    },
+    
+    "hasura_admin": {
+      "credential_name": "Hasura Admin Access",
+      "type": "httpHeaderAuth",
+      "data": {
+        "name": "x-hasura-admin-secret",
+        "value": "${HASURA_ADMIN_SECRET}"
+      }
+    },
+    
+    "hasura_jwt": {
+      "credential_name": "Hasura JWT Token",
+      "type": "httpHeaderAuth", 
+      "data": {
+        "name": "Authorization",
+        "value": "Bearer ${HASURA_JWT_TOKEN}"
+      }
+    }
+  },
+
+  "workflow_node_configurations": {
+    "postgres_insert_user": {
+      "node_type": "n8n-nodes-base.postgres",
+      "operation": "insert",
+      "configuration": {
+        "credentials": "supabase",
+        "table": "users",
+        "columns": "email,password_hash,first_name,last_name,created_at,status",
+        "return_fields": "id,email,created_at",
+        "on_conflict": "DO NOTHING"
+      }
+    },
+
+    "postgres_insert_tenant": {
+      "node_type": "n8n-nodes-base.postgres", 
+      "operation": "insert",
+      "configuration": {
+        "credentials": "supabase",
+        "table": "tenants",
+        "columns": "name,slug,plan_type,created_at,status",
+        "return_fields": "id,name,slug",
+        "on_conflict": "UPDATE SET updated_at = NOW()"
+      }
+    },
+
+    "postgres_link_tenant_user": {
+      "node_type": "n8n-nodes-base.postgres",
+      "operation": "insert", 
+      "configuration": {
+        "credentials": "supabase",
+        "table": "tenant_users",
+        "columns": "tenant_id,user_id,role,status,joined_at",
+        "return_fields": "id,tenant_id,user_id,role"
+      }
+    },
+
+    "hasura_graphql_query": {
+      "node_type": "n8n-nodes-base.graphql",
+      "configuration": {
+        "credentials": "hasura_admin",
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "request_method": "POST",
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}"
+        }
+      }
+    },
+
+    "hasura_subscription": {
+      "node_type": "n8n-nodes-base.graphql",
+      "configuration": {
+        "credentials": "hasura_admin", 
+        "endpoint": "${HASURA_GRAPHQL_WS_ENDPOINT}",
+        "request_method": "SUBSCRIPTION",
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}"
+        }
+      }
+    }
+  },
+
+  "tenant_isolation": {
+    "strategy": "row_level_security",
+    "implementation": {
+      "rls_policies": true,
+      "tenant_context": "x-hasura-tenant-id",
+      "user_context": "x-hasura-user-id",
+      "role_context": "x-hasura-role"
+    },
+    "workflow_patterns": {
+      "tenant_scoped_queries": {
+        "description": "All queries must include tenant_id filter",
+        "example": "WHERE tenant_id = ${{ $json.headers['x-hasura-tenant-id'] }}"
+      },
+      "user_scoped_operations": {
+        "description": "User operations scoped to their accessible tenants",
+        "example": "WHERE user_id = ${{ $json.headers['x-hasura-user-id'] }}"
+      }
+    }
+  },
+
+  "environment_variables": {
+    "required": [
+      "SUPABASE_DB_HOST",
+      "SUPABASE_DB_NAME", 
+      "SUPABASE_DB_USER",
+      "SUPABASE_DB_PASSWORD",
+      "SUPABASE_SSL_CERT_PATH",
+      "HASURA_GRAPHQL_ENDPOINT",
+      "HASURA_GRAPHQL_WS_ENDPOINT", 
+      "HASURA_ADMIN_SECRET",
+      "HASURA_JWT_SECRET",
+      "N8N_WEBHOOK_BASE_URL"
+    ],
+    "optional": [
+      "HASURA_JWT_TOKEN",
+      "SUPABASE_ANON_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ],
+    "examples": {
+      "SUPABASE_DB_HOST": "db.abcdefghijklmn.supabase.co",
+      "SUPABASE_DB_NAME": "postgres",
+      "SUPABASE_DB_USER": "postgres", 
+      "HASURA_GRAPHQL_ENDPOINT": "http://localhost:8080/v1/graphql",
+      "HASURA_GRAPHQL_WS_ENDPOINT": "ws://localhost:8080/v1/graphql",
+      "N8N_WEBHOOK_BASE_URL": "http://localhost:5678"
+    }
+  },
+
+  "monitoring": {
+    "connection_health_checks": {
+      "supabase": {
+        "query": "SELECT 1 as health_check",
+        "interval_seconds": 60,
+        "timeout_seconds": 10
+      },
+      "hasura": {
+        "query": "query { __schema { queryType { name } } }",
+        "interval_seconds": 30,
+        "timeout_seconds": 5
+      }
+    },
+    "performance_metrics": [
+      "connection_pool_usage",
+      "query_execution_time", 
+      "error_rates",
+      "throughput"
+    ]
+  },
+
+  "backup_and_recovery": {
+    "connection_failover": {
+      "enabled": true,
+      "read_replicas": ["${SUPABASE_DB_HOST_REPLICA}"],
+      "automatic_failover": true,
+      "health_check_interval": 30
+    },
+    "connection_retry": {
+      "max_retries": 3,
+      "initial_delay_ms": 1000,
+      "max_delay_ms": 10000,
+      "exponential_backoff": true
+    }
+  },
+
+  "security": {
+    "ssl_verification": true,
+    "connection_encryption": true,
+    "credential_storage": "encrypted",
+    "ip_allowlist": {
+      "enabled": false,
+      "addresses": []
+    },
+    "audit_logging": {
+      "enabled": true,
+      "log_queries": true,
+      "log_connections": true
+    }
+  }
+}

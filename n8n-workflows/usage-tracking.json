@@ -1,0 +1,793 @@
+{
+  "name": "Usage Tracking and Billing System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/track-usage",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-usage-trigger",
+      "name": "Usage Tracking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "usage-tracking-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "metric-type-check",
+              "leftValue": "={{ $json.metric_type }}",
+              "rightValue": "api_calls,agent_executions,storage_usage,compute_time,tokens_used,data_transfer",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "usage-value-check",
+              "leftValue": "={{ $json.usage_value }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-usage-data",
+      "name": "Validate Usage Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "usage-id",
+              "name": "usage_id",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $json.tenant_id }}-{{ $randomString(8) }}",
+              "type": "string"
+            },
+            {
+              "id": "billing-period",
+              "name": "billing_period",
+              "value": "={{ $now.format('YYYY-MM') }}",
+              "type": "string"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $now.toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "cost-calculation",
+              "name": "estimated_cost",
+              "value": "={{ \n  $json.metric_type === 'api_calls' ? $json.usage_value * 0.001 :\n  $json.metric_type === 'agent_executions' ? $json.usage_value * 0.01 :\n  $json.metric_type === 'storage_usage' ? $json.usage_value * 0.00001 :\n  $json.metric_type === 'compute_time' ? $json.usage_value * 0.0001 :\n  $json.metric_type === 'tokens_used' ? $json.usage_value * 0.000001 :\n  $json.metric_type === 'data_transfer' ? $json.usage_value * 0.000005 :\n  0\n}}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-usage-record",
+      "name": "Prepare Usage Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation RecordUsage($usage_id: String!, $tenant_id: String!, $metric_type: String!, $usage_value: Float!, $estimated_cost: Float!, $billing_period: String!, $timestamp: timestamptz!, $metadata: jsonb) {\n  insert_usage_records_one(object: {\n    usage_id: $usage_id,\n    tenant_id: $tenant_id,\n    metric_type: $metric_type,\n    usage_value: $usage_value,\n    estimated_cost: $estimated_cost,\n    billing_period: $billing_period,\n    recorded_at: $timestamp,\n    metadata: $metadata\n  }) {\n    id\n    usage_id\n    estimated_cost\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"usage_id\": $json.usage_id,\n  \"tenant_id\": $('webhook-usage-trigger').item.json.tenant_id,\n  \"metric_type\": $('webhook-usage-trigger').item.json.metric_type,\n  \"usage_value\": $('webhook-usage-trigger').item.json.usage_value,\n  \"estimated_cost\": $json.estimated_cost,\n  \"billing_period\": $json.billing_period,\n  \"timestamp\": $json.timestamp,\n  \"metadata\": $('webhook-usage-trigger').item.json.metadata || {}\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "record-usage",
+      "name": "Record Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateUsageAggregation($tenant_id: String!, $billing_period: String!, $metric_type: String!, $usage_value: Float!, $estimated_cost: Float!) {\n  insert_usage_aggregations_one(object: {\n    tenant_id: $tenant_id,\n    billing_period: $billing_period,\n    metric_type: $metric_type,\n    total_usage: $usage_value,\n    total_cost: $estimated_cost,\n    last_updated: \"now()\"\n  }, on_conflict: {\n    constraint: usage_aggregations_tenant_id_billing_period_metric_type_key,\n    update_columns: [\n      total_usage,\n      total_cost,\n      last_updated\n    ],\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      billing_period: {_eq: $billing_period},\n      metric_type: {_eq: $metric_type}\n    }\n  }) {\n    id\n    total_usage\n    total_cost\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-usage-trigger').item.json.tenant_id,\n  \"billing_period\": $('Prepare Usage Record').item.json.billing_period,\n  \"metric_type\": $('webhook-usage-trigger').item.json.metric_type,\n  \"usage_value\": \"(SELECT COALESCE(total_usage, 0) + \" + $('webhook-usage-trigger').item.json.usage_value + \" FROM usage_aggregations WHERE tenant_id = '\" + $('webhook-usage-trigger').item.json.tenant_id + \"' AND billing_period = '\" + $('Prepare Usage Record').item.json.billing_period + \"' AND metric_type = '\" + $('webhook-usage-trigger').item.json.metric_type + \"')\",\n  \"estimated_cost\": \"(SELECT COALESCE(total_cost, 0) + \" + $('Prepare Usage Record').item.json.estimated_cost + \" FROM usage_aggregations WHERE tenant_id = '\" + $('webhook-usage-trigger').item.json.tenant_id + \"' AND billing_period = '\" + $('Prepare Usage Record').item.json.billing_period + \"' AND metric_type = '\" + $('webhook-usage-trigger').item.json.metric_type + \"')\"\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-aggregation",
+      "name": "Update Usage Aggregation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query CheckUsageLimits($tenant_id: String!, $billing_period: String!) {\n  tenants_by_pk(id: $tenant_id) {\n    id\n    name\n    plan_limits\n    billing_settings\n  }\n  usage_aggregations(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      billing_period: {_eq: $billing_period}\n    }\n  ) {\n    metric_type\n    total_usage\n    total_cost\n  }\n  usage_alerts(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      is_active: {_eq: true}\n    }\n  ) {\n    id\n    metric_type\n    threshold_type\n    threshold_value\n    alert_type\n    last_triggered_at\n    cooldown_minutes\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-usage-trigger').item.json.tenant_id,\n  \"billing_period\": $('Prepare Usage Record').item.json.billing_period\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-usage-limits",
+      "name": "Check Usage Limits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "limits-analysis",
+              "name": "limits_analysis",
+              "value": "={{ \n  (() => {\n    const tenant = $json.data.tenants_by_pk;\n    const aggregations = $json.data.usage_aggregations;\n    const alerts = $json.data.usage_alerts;\n    const limits = tenant?.plan_limits || {};\n    \n    const violations = [];\n    const warnings = [];\n    \n    // Check each aggregation against limits\n    for (const agg of aggregations) {\n      const limit = limits[agg.metric_type];\n      if (limit) {\n        const percentage = (agg.total_usage / limit) * 100;\n        \n        if (percentage >= 100) {\n          violations.push({\n            metric_type: agg.metric_type,\n            current_usage: agg.total_usage,\n            limit: limit,\n            percentage: percentage,\n            cost: agg.total_cost\n          });\n        } else if (percentage >= 80) {\n          warnings.push({\n            metric_type: agg.metric_type,\n            current_usage: agg.total_usage,\n            limit: limit,\n            percentage: percentage,\n            cost: agg.total_cost\n          });\n        }\n      }\n    }\n    \n    // Check alert thresholds\n    const triggered_alerts = [];\n    const now = new Date();\n    \n    for (const alert of alerts) {\n      const agg = aggregations.find(a => a.metric_type === alert.metric_type);\n      if (agg) {\n        let should_trigger = false;\n        \n        if (alert.threshold_type === 'percentage' && limits[alert.metric_type]) {\n          const percentage = (agg.total_usage / limits[alert.metric_type]) * 100;\n          should_trigger = percentage >= alert.threshold_value;\n        } else if (alert.threshold_type === 'absolute') {\n          should_trigger = agg.total_usage >= alert.threshold_value;\n        } else if (alert.threshold_type === 'cost') {\n          should_trigger = agg.total_cost >= alert.threshold_value;\n        }\n        \n        // Check cooldown\n        if (should_trigger && alert.last_triggered_at) {\n          const last_triggered = new Date(alert.last_triggered_at);\n          const cooldown_ms = alert.cooldown_minutes * 60 * 1000;\n          if (now - last_triggered < cooldown_ms) {\n            should_trigger = false;\n          }\n        }\n        \n        if (should_trigger) {\n          triggered_alerts.push({\n            alert_id: alert.id,\n            metric_type: alert.metric_type,\n            alert_type: alert.alert_type,\n            threshold_value: alert.threshold_value,\n            current_value: alert.threshold_type === 'cost' ? agg.total_cost : agg.total_usage\n          });\n        }\n      }\n    }\n    \n    return {\n      violations,\n      warnings,\n      triggered_alerts,\n      total_cost: aggregations.reduce((sum, agg) => sum + agg.total_cost, 0)\n    };\n  })()\n}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "analyze-limits",
+      "name": "Analyze Usage Limits",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-violations",
+              "leftValue": "={{ $json.limits_analysis.violations.length }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-violations",
+      "name": "Check for Violations",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-warnings",
+              "leftValue": "={{ $json.limits_analysis.warnings.length }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-warnings",
+      "name": "Check for Warnings",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-usage-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "billing"
+            },
+            {
+              "name": "message",
+              "value": "Usage limit exceeded for: {{ $('Analyze Usage Limits').item.json.limits_analysis.violations.map(v => v.metric_type + ' (' + Math.round(v.percentage) + '%)').join(', ') }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ $('Analyze Usage Limits').item.json.limits_analysis.violations }}"
+            },
+            {
+              "name": "environment",
+              "value": "{{ $('webhook-usage-trigger').item.json.environment || 'production' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-violation-alert",
+      "name": "Send Violation Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-usage-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "billing"
+            },
+            {
+              "name": "message",
+              "value": "Usage warning for: {{ $('Analyze Usage Limits').item.json.limits_analysis.warnings.map(w => w.metric_type + ' (' + Math.round(w.percentage) + '%)').join(', ') }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ $('Analyze Usage Limits').item.json.limits_analysis.warnings }}"
+            },
+            {
+              "name": "environment",
+              "value": "{{ $('webhook-usage-trigger').item.json.environment || 'production' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-warning-alert",
+      "name": "Send Warning Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "limits_analysis.triggered_alerts",
+        "options": {}
+      },
+      "id": "split-triggered-alerts",
+      "name": "Split Triggered Alerts",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2000, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateAlertTriggered($alert_id: Int!) {\n  update_usage_alerts_by_pk(\n    pk_columns: {id: $alert_id},\n    _set: {last_triggered_at: \"now()\"}\n  ) {\n    id\n    last_triggered_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"alert_id\": $json.alert_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-alert-timestamp",
+      "name": "Update Alert Timestamp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-usage-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "alert"
+            },
+            {
+              "name": "message",
+              "value": "{{ $json.alert_type.toUpperCase() }} alert triggered for {{ $json.metric_type }}: {{ $json.current_value }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ {\n  \"metric_type\": $json.metric_type,\n  \"alert_type\": $json.alert_type,\n  \"threshold_value\": $json.threshold_value,\n  \"current_value\": $json.current_value,\n  \"alert_id\": $json.alert_id\n} }}"
+            },
+            {
+              "name": "environment",
+              "value": "{{ $('webhook-usage-trigger').item.json.environment || 'production' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-custom-alert",
+      "name": "Send Custom Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-usage-trigger').item.json.callback_webhook || $env.N8N_WEBHOOK_URL }}/usage-tracked",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "usage_id",
+              "value": "={{ $('Prepare Usage Record').item.json.usage_id }}"
+            },
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-usage-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "metric_type",
+              "value": "={{ $('webhook-usage-trigger').item.json.metric_type }}"
+            },
+            {
+              "name": "usage_value",
+              "value": "={{ $('webhook-usage-trigger').item.json.usage_value }}"
+            },
+            {
+              "name": "estimated_cost",
+              "value": "={{ $('Prepare Usage Record').item.json.estimated_cost }}"
+            },
+            {
+              "name": "alerts_triggered",
+              "value": "={{ $('Analyze Usage Limits').item.json.limits_analysis.triggered_alerts.length }}"
+            },
+            {
+              "name": "violations",
+              "value": "={{ $('Analyze Usage Limits').item.json.limits_analysis.violations.length }}"
+            },
+            {
+              "name": "warnings",
+              "value": "={{ $('Analyze Usage Limits').item.json.limits_analysis.warnings.length }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "usage-completion-callback",
+      "name": "Usage Completion Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-usage-trigger').item.json.callback_webhook || $env.N8N_WEBHOOK_URL }}/usage-error",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-usage-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "error",
+              "value": "{{ $json.error || 'Usage tracking validation failed' }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-callback",
+      "name": "Error Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"usage_id\": $('Prepare Usage Record').item.json.usage_id,\n  \"status\": \"success\",\n  \"tenant_id\": $('webhook-usage-trigger').item.json.tenant_id,\n  \"metric_type\": $('webhook-usage-trigger').item.json.metric_type,\n  \"usage_value\": $('webhook-usage-trigger').item.json.usage_value,\n  \"estimated_cost\": $('Prepare Usage Record').item.json.estimated_cost,\n  \"billing_period\": $('Prepare Usage Record').item.json.billing_period,\n  \"alerts_summary\": {\n    \"violations\": $('Analyze Usage Limits').item.json.limits_analysis.violations.length,\n    \"warnings\": $('Analyze Usage Limits').item.json.limits_analysis.warnings.length,\n    \"triggered_alerts\": $('Analyze Usage Limits').item.json.limits_analysis.triggered_alerts.length\n  }\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2880, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": \"Usage tracking request failed validation\",\n  \"tenant_id\": $('webhook-usage-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 600]
+    }
+  ],
+  "connections": {
+    "Usage Tracking Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Usage Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Usage Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Usage Record": {
+      "main": [
+        [
+          {
+            "node": "Record Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Usage": {
+      "main": [
+        [
+          {
+            "node": "Update Usage Aggregation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Usage Aggregation": {
+      "main": [
+        [
+          {
+            "node": "Check Usage Limits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Usage Limits": {
+      "main": [
+        [
+          {
+            "node": "Analyze Usage Limits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Usage Limits": {
+      "main": [
+        [
+          {
+            "node": "Check for Violations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check for Warnings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Triggered Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Violations": {
+      "main": [
+        [
+          {
+            "node": "Send Violation Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Warnings": {
+      "main": [
+        [
+          {
+            "node": "Send Warning Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Triggered Alerts": {
+      "main": [
+        [
+          {
+            "node": "Update Alert Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Usage Completion Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Alert Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Send Custom Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Custom Alert": {
+      "main": [
+        [
+          {
+            "node": "Split Triggered Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usage Completion Callback": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Callback": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["usage", "tracking", "billing", "alerts", "limits", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

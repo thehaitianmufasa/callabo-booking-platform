@@ -1,0 +1,622 @@
+{
+  "name": "Project Deployment Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/deploy",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-deploy-trigger",
+      "name": "Deploy Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "deploy-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "env-check",
+              "leftValue": "={{ $json.environment }}",
+              "rightValue": "production,staging,development",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validation-check",
+      "name": "Validate Deployment Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "deploy-id",
+              "name": "deployment_id",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $json.tenant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "branch-name",
+              "name": "branch_name",
+              "value": "={{ $json.environment === 'production' ? 'main' : $json.environment === 'staging' ? 'staging' : 'develop' }}",
+              "type": "string"
+            },
+            {
+              "id": "vercel-project",
+              "name": "vercel_project_name",
+              "value": "={{ $json.tenant_id }}-callabo-{{ $json.environment }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deployment-prep",
+      "name": "Prepare Deployment",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "get",
+        "owner": "={{ $json.github_username || $env.GITHUB_USERNAME }}",
+        "repository": "callabo-multi-agent",
+        "additionalFields": {}
+      },
+      "id": "github-repo-check",
+      "name": "Check GitHub Repository",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [900, 100],
+      "credentials": {
+        "githubApi": {
+          "id": "github-credentials",
+          "name": "GitHub API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "repository",
+        "operation": "getBranch",
+        "owner": "={{ $('Prepare Deployment').item.json.github_username || $env.GITHUB_USERNAME }}",
+        "repository": "callabo-multi-agent",
+        "branch": "={{ $('Prepare Deployment').item.json.branch_name }}",
+        "additionalFields": {}
+      },
+      "id": "github-branch-check",
+      "name": "Verify Branch Exists",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1120, 100],
+      "credentials": {
+        "githubApi": {
+          "id": "github-credentials",
+          "name": "GitHub API Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vercel.com/v1/deployments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $('Prepare Deployment').item.json.vercel_project_name }}"
+            },
+            {
+              "name": "gitSource",
+              "value": "={{ {\n  \"type\": \"github\",\n  \"repo\": $json.github_username + \"/callabo-multi-agent\",\n  \"ref\": $('Prepare Deployment').item.json.branch_name\n} }}"
+            },
+            {
+              "name": "env",
+              "value": "={{ {\n  \"ANTHROPIC_API_KEY\": $env.ANTHROPIC_API_KEY,\n  \"LANGCHAIN_TRACING_V2\": \"true\",\n  \"LANGCHAIN_API_KEY\": $env.LANGCHAIN_API_KEY,\n  \"LANGCHAIN_PROJECT\": \"callabo-multi-agent-\" + $json.environment,\n  \"SUPABASE_URL\": $env.SUPABASE_URL + \"/tenant/\" + $json.tenant_id,\n  \"SUPABASE_ANON_KEY\": $env.SUPABASE_ANON_KEY,\n  \"HASURA_GRAPHQL_ENDPOINT\": $env.HASURA_GRAPHQL_ENDPOINT,\n  \"HASURA_ADMIN_SECRET\": $env.HASURA_ADMIN_SECRET,\n  \"TENANT_ID\": $json.tenant_id,\n  \"ENVIRONMENT\": $json.environment\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "vercel-deploy",
+      "name": "Deploy to Vercel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.vercel.com/v6/deployments/{{ $json.uid }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "deployment-status",
+      "name": "Check Deployment Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vercel-api-credentials",
+          "name": "Vercel API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "deployment-ready",
+              "leftValue": "={{ $json.readyState }}",
+              "rightValue": "READY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "deployment-ready-check",
+      "name": "Deployment Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateDeployment($tenant_id: String!, $deployment_id: String!, $status: String!, $url: String!, $environment: String!) {\n  insert_deployments_one(object: {\n    tenant_id: $tenant_id,\n    deployment_id: $deployment_id,\n    status: $status,\n    deployment_url: $url,\n    environment: $environment,\n    deployed_at: \"now()\"\n  }, on_conflict: {\n    constraint: deployments_pkey,\n    update_columns: [status, deployment_url, deployed_at]\n  }) {\n    id\n    deployment_id\n    status\n    deployment_url\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-deploy-trigger').item.json.tenant_id,\n  \"deployment_id\": $('Prepare Deployment').item.json.deployment_id,\n  \"status\": \"deployed\",\n  \"url\": $('Check Deployment Status').item.json.url,\n  \"environment\": $('webhook-deploy-trigger').item.json.environment\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-deployment-record",
+      "name": "Update Deployment Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-deploy-trigger').item.json.notification_webhook || $env.N8N_WEBHOOK_URL }}/deployment-success",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-deploy-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "deployment_id",
+              "value": "={{ $('Prepare Deployment').item.json.deployment_id }}"
+            },
+            {
+              "name": "deployment_url",
+              "value": "={{ $('Check Deployment Status').item.json.url }}"
+            },
+            {
+              "name": "environment",
+              "value": "={{ $('webhook-deploy-trigger').item.json.environment }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "message",
+              "value": "Deployment completed successfully"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "success-notification",
+      "name": "Send Success Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 100]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "wait-for-deployment",
+      "name": "Wait for Deployment",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('webhook-deploy-trigger').item.json.notification_webhook || $env.N8N_WEBHOOK_URL }}/deployment-error",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-deploy-trigger').item.json.tenant_id }}"
+            },
+            {
+              "name": "deployment_id",
+              "value": "={{ $('Prepare Deployment').item.json.deployment_id }}"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.error || 'Deployment validation failed' }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "error-notification",
+      "name": "Send Error Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"deployment_id\": $('Prepare Deployment').item.json.deployment_id,\n  \"status\": \"success\",\n  \"deployment_url\": $('Check Deployment Status').item.json.url,\n  \"environment\": $('webhook-deploy-trigger').item.json.environment,\n  \"tenant_id\": $('webhook-deploy-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2440, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": $json.error || \"Deployment failed validation\",\n  \"tenant_id\": $('webhook-deploy-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "retry-count",
+              "name": "retry_count",
+              "value": "={{ ($json.retry_count || 0) + 1 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "increment-retry",
+      "name": "Increment Retry Count",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "max-retries",
+              "leftValue": "={{ $json.retry_count }}",
+              "rightValue": "5",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "retry-check",
+      "name": "Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 400]
+    }
+  ],
+  "connections": {
+    "Deploy Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Deployment Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Deployment Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Deployment": {
+      "main": [
+        [
+          {
+            "node": "Check GitHub Repository",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check GitHub Repository": {
+      "main": [
+        [
+          {
+            "node": "Verify Branch Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Branch Exists": {
+      "main": [
+        [
+          {
+            "node": "Deploy to Vercel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deploy to Vercel": {
+      "main": [
+        [
+          {
+            "node": "Check Deployment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Deployment Status": {
+      "main": [
+        [
+          {
+            "node": "Deployment Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deployment Ready?": {
+      "main": [
+        [
+          {
+            "node": "Update Deployment Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Deployment Record": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Deployment": {
+      "main": [
+        [
+          {
+            "node": "Increment Retry Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Retry Count": {
+      "main": [
+        [
+          {
+            "node": "Should Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Retry?": {
+      "main": [
+        [
+          {
+            "node": "Check Deployment Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["deployment", "vercel", "multi-tenant", "automation"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

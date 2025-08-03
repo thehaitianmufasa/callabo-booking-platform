@@ -1,0 +1,264 @@
+{
+  "name": "Notification Template Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/template-management",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-template-trigger",
+      "name": "Template Management Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "template-management-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create,update,delete,list,get",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-template-request",
+      "name": "Validate Template Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-switch",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "action-router",
+      "name": "Route Template Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateNotificationTemplate($tenant_id: String!, $template_type: String!, $template_name: String!, $subject_template: String!, $body_template: String!, $variables: jsonb, $is_html: Boolean!, $is_default: Boolean!) {\n  insert_notification_templates_one(object: {\n    tenant_id: $tenant_id,\n    template_type: $template_type,\n    template_name: $template_name,\n    subject_template: $subject_template,\n    body_template: $body_template,\n    variables: $variables,\n    is_html: $is_html,\n    is_default: $is_default,\n    is_active: true,\n    created_at: \"now()\"\n  }) {\n    id\n    template_name\n    template_type\n    created_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-template-trigger').item.json.tenant_id,\n  \"template_type\": $('webhook-template-trigger').item.json.template_type,\n  \"template_name\": $('webhook-template-trigger').item.json.template_name,\n  \"subject_template\": $('webhook-template-trigger').item.json.subject_template,\n  \"body_template\": $('webhook-template-trigger').item.json.body_template,\n  \"variables\": $('webhook-template-trigger').item.json.variables || {},\n  \"is_html\": $('webhook-template-trigger').item.json.is_html || false,\n  \"is_default\": $('webhook-template-trigger').item.json.is_default || false\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-template",
+      "name": "Create Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query ListNotificationTemplates($tenant_id: String!, $template_type: String) {\n  notification_templates(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      template_type: {_eq: $template_type},\n      is_active: {_eq: true}\n    },\n    order_by: {created_at: desc}\n  ) {\n    id\n    template_name\n    template_type\n    subject_template\n    body_template\n    variables\n    is_html\n    is_default\n    is_active\n    created_at\n    updated_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-template-trigger').item.json.tenant_id,\n  \"template_type\": $('webhook-template-trigger').item.json.template_type || null\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-templates",
+      "name": "List Templates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"action\": $('webhook-template-trigger').item.json.action,\n  \"data\": $json.data || $json,\n  \"tenant_id\": $('webhook-template-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": \"Template request failed validation\",\n  \"tenant_id\": $('webhook-template-trigger').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Template Management Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Template Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Template Request": {
+      "main": [
+        [
+          {
+            "node": "Route Template Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Template Action": {
+      "main": [
+        [
+          {
+            "node": "Create Template",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Template": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Templates": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["templates", "notifications", "management", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,541 @@
+{
+  "name": "Multi-Tenant User Registration Workflow",
+  "id": "user-registration-multitenant",
+  "version": "2.0.0",
+  "description": "Enhanced user registration workflow with multi-tenant support, automatic tenant creation, and RLS compliance",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "register",
+        "options": {
+          "responseMode": "responseNode"
+        },
+        "authentication": "none"
+      },
+      "name": "Registration Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [200, 400],
+      "id": "webhook-register",
+      "notes": "Accepts user registration requests with optional tenant info"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Enhanced input validation for multi-tenant registration\nconst input = $input.item.json;\n\n// Required fields validation\nif (!input.email || !input.password) {\n  throw new Error('Email and password are required');\n}\n\n// Email format validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!emailRegex.test(input.email)) {\n  throw new Error('Invalid email format');\n}\n\n// Password strength validation\nif (input.password.length < 8) {\n  throw new Error('Password must be at least 8 characters');\n}\n\n// Tenant information handling\nconst isFirstUser = !input.tenant_slug && !input.tenant_id;\nconst tenantSlug = input.tenant_slug || input.email.split('@')[1].replace(/\\./g, '-').toLowerCase();\n\n// Determine if this is a new tenant creation or existing tenant join\nconst registrationType = isFirstUser ? 'new_tenant' : 'existing_tenant';\n\nreturn {\n  json: {\n    ...input,\n    tenant_slug: tenantSlug,\n    registration_type: registrationType,\n    first_name: input.first_name || '',\n    last_name: input.last_name || '',\n    timezone: input.timezone || 'UTC',\n    locale: input.locale || 'en',\n    validated_at: new Date().toISOString()\n  }\n};"
+      },
+      "name": "Validate & Process Input",
+      "type": "n8n-nodes-base.function",
+      "position": [400, 400],
+      "id": "validate-input",
+      "notes": "Validates input and determines tenant strategy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.registration_type}}",
+              "operation": "equal",
+              "value2": "new_tenant"
+            }
+          ]
+        }
+      },
+      "name": "Check Registration Type",
+      "type": "n8n-nodes-base.if",
+      "position": [600, 400],
+      "id": "check-registration-type",
+      "notes": "Routes to tenant creation or existing tenant flow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Check if tenant already exists\nSELECT id, name, slug, status, max_users,\n  (SELECT COUNT(*) FROM tenant_users WHERE tenant_id = tenants.id AND status = 'active') as current_users\nFROM tenants \nWHERE slug = $1 AND status = 'active'\nLIMIT 1",
+        "additionalFields": {
+          "mode": "list",
+          "queryParams": "={{$json.tenant_slug}}"
+        }
+      },
+      "name": "Check Existing Tenant",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [800, 300],
+      "id": "check-existing-tenant",
+      "notes": "Check if tenant exists and has capacity"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery", 
+        "query": "-- Create new tenant\nINSERT INTO tenants (name, slug, plan_type, max_users, max_projects, max_workflows, status)\nVALUES ($1, $2, $3, $4, $5, $6, $7)\nRETURNING id, name, slug, created_at",
+        "additionalFields": {
+          "mode": "list",
+          "queryParams": "={{$json.tenant_name || $json.email.split('@')[1]}}},={{$json.tenant_slug}},free,5,3,10,active"
+        }
+      },
+      "name": "Create New Tenant",
+      "type": "n8n-nodes-base.postgres", 
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [800, 500],
+      "id": "create-new-tenant",
+      "notes": "Creates new tenant for first user"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Hash password using bcrypt\nconst bcrypt = require('bcrypt');\nconst saltRounds = 12;\n\nconst hashedPassword = bcrypt.hashSync($input.item.json.password, saltRounds);\n\n// Prepare user data\nconst userData = {\n  email: $input.item.json.email,\n  password_hash: hashedPassword,\n  first_name: $input.item.json.first_name,\n  last_name: $input.item.json.last_name,\n  timezone: $input.item.json.timezone,\n  locale: $input.item.json.locale,\n  email_verified: false,\n  status: 'pending',\n  created_at: new Date().toISOString()\n};\n\n// Pass through tenant information\nconst tenantInfo = $node['Check Existing Tenant'].json.length > 0 \n  ? $node['Check Existing Tenant'].json[0]\n  : $node['Create New Tenant'].json[0];\n\nreturn {\n  json: {\n    ...userData,\n    tenant_info: tenantInfo,\n    registration_type: $input.item.json.registration_type\n  }\n};"
+      },
+      "name": "Hash Password & Prepare Data",
+      "type": "n8n-nodes-base.function",
+      "position": [1000, 400],
+      "id": "hash-password",
+      "notes": "Securely hash password and prepare user data"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "users",
+        "columns": "email,password_hash,first_name,last_name,timezone,locale,email_verified,status,created_at",
+        "additionalFields": {
+          "returnFields": "id,email,first_name,last_name,created_at",
+          "upsert": false
+        }
+      },
+      "name": "Insert User",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main", 
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [1200, 400],
+      "id": "insert-user",
+      "notes": "Insert user into users table"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "tenant_users",
+        "columns": "tenant_id,user_id,role,status,joined_at",
+        "additionalFields": {
+          "returnFields": "id,tenant_id,user_id,role",
+          "upsert": false
+        }
+      },
+      "name": "Link User to Tenant",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [1400, 400],
+      "id": "link-user-tenant",
+      "notes": "Create tenant-user relationship"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "user_onboarding",
+        "columns": "tenant_id,user_id,email,start_date,current_step,total_steps,checklist,status",
+        "additionalFields": {
+          "returnFields": "id,current_step,checklist",
+          "upsert": true,
+          "onConflict": "tenant_id,user_id"
+        }
+      },
+      "name": "Initialize Onboarding",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB" 
+        }
+      },
+      "position": [1600, 400],
+      "id": "init-onboarding",
+      "notes": "Initialize user onboarding process"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Create audit log entry\nconst userInfo = $node['Insert User'].json[0];\nconst tenantInfo = $input.item.json.tenant_info;\nconst linkInfo = $node['Link User to Tenant'].json[0];\n\nconst auditData = {\n  tenant_id: tenantInfo.id,\n  user_id: userInfo.id,\n  action: 'CREATE',\n  resource_type: 'user_registration',\n  resource_id: userInfo.id,\n  new_values: {\n    user_id: userInfo.id,\n    email: userInfo.email,\n    tenant_id: tenantInfo.id,\n    tenant_slug: tenantInfo.slug,\n    registration_type: $input.item.json.registration_type\n  },\n  ip_address: $node['Registration Webhook'].json.headers['x-forwarded-for'] || $node['Registration Webhook'].json.headers['x-real-ip'] || 'unknown',\n  user_agent: $node['Registration Webhook'].json.headers['user-agent'] || 'unknown',\n  metadata: {\n    workflow_id: $workflow.id,\n    execution_id: $execution.id,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn { json: auditData };"
+      },
+      "name": "Create Audit Log",
+      "type": "n8n-nodes-base.function",
+      "position": [1800, 400],
+      "id": "create-audit-log",
+      "notes": "Log registration event for compliance"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "audit_logs",
+        "columns": "tenant_id,user_id,action,resource_type,resource_id,new_values,ip_address,user_agent,metadata",
+        "additionalFields": {
+          "returnFields": "id,created_at",
+          "upsert": false
+        }
+      },
+      "name": "Insert Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [2000, 400],
+      "id": "insert-audit-log",
+      "notes": "Store audit log in database"
+    },
+    {
+      "parameters": {
+        "to": "={{$node['Insert User'].json[0].email}}",
+        "subject": "Welcome to Callabo Platform - Verify Your Email",
+        "html": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Welcome to Callabo Platform</title>\n  <style>\n    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }\n    .container { max-width: 600px; margin: 0 auto; background-color: white; }\n    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; }\n    .header h1 { margin: 0; font-size: 28px; font-weight: 300; }\n    .content { padding: 40px 30px; }\n    .welcome-message { font-size: 18px; color: #2d3748; margin-bottom: 20px; }\n    .tenant-info { background-color: #edf2f7; padding: 20px; border-radius: 8px; margin: 20px 0; }\n    .verify-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }\n    .verify-button:hover { opacity: 0.9; }\n    .footer { background-color: #edf2f7; padding: 20px; text-align: center; font-size: 14px; color: #718096; }\n    .checklist { background-color: #f7fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }\n    .checklist h3 { color: #2d3748; margin-top: 0; }\n    .checklist ul { list-style: none; padding: 0; }\n    .checklist li { padding: 8px 0; color: #4a5568; }\n    .checklist li::before { content: '✓'; color: #48bb78; font-weight: bold; margin-right: 10px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>Welcome to Callabo Platform! 🚀</h1>\n    </div>\n    <div class=\"content\">\n      <p class=\"welcome-message\">Hi {{$node['Insert User'].json[0].first_name || 'there'}},</p>\n      <p>Thank you for joining Callabo Platform! You're now part of an amazing community building the future of AI-powered applications.</p>\n      \n      <div class=\"tenant-info\">\n        <h3>🏢 Your Workspace</h3>\n        <p><strong>Workspace:</strong> {{$input.item.json.tenant_info.name}}</p>\n        <p><strong>Workspace ID:</strong> {{$input.item.json.tenant_info.slug}}</p>\n        <p><strong>Role:</strong> {{$json.registration_type === 'new_tenant' ? 'Owner' : 'Member'}}</p>\n      </div>\n      \n      <p>To get started, please verify your email address by clicking the button below:</p>\n      \n      <p style=\"text-align: center;\">\n        <a href=\"{{$node['Registration Webhook'].json.headers.host || 'https://app.callabo-platform.com'}}/verify?email={{$node['Insert User'].json[0].email}}&tenant={{$input.item.json.tenant_info.slug}}\" class=\"verify-button\">Verify Email Address</a>\n      </p>\n      \n      <div class=\"checklist\">\n        <h3>🎯 What's Next?</h3>\n        <ul>\n          <li>Verify your email address</li>\n          <li>Complete your profile setup</li>\n          <li>Explore the platform features</li>\n          <li>Create your first AI agent workflow</li>\n          <li>Connect with your team members</li>\n        </ul>\n      </div>\n      \n      <p>If you have any questions, our support team is here to help. Just reply to this email or visit our <a href=\"https://docs.callabo-platform.com\">documentation</a>.</p>\n      \n      <p>Best regards,<br>The Callabo Platform Team</p>\n    </div>\n    <div class=\"footer\">\n      <p>If you didn't create this account, please ignore this email or <a href=\"mailto:support@callabo-platform.com\">contact support</a>.</p>\n      <p>© 2024 Callabo Platform. All rights reserved.</p>\n    </div>\n  </div>\n</body>\n</html>"
+      },
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.emailSend",
+      "credentials": {
+        "smtp": {
+          "id": "smtp-service",
+          "name": "SMTP Email Service"
+        }
+      },
+      "position": [2200, 400],
+      "id": "send-welcome-email",
+      "notes": "Send branded welcome email with tenant context"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "={{$node['Registration Webhook'].json.headers.host || 'http://localhost:5678'}}/webhook/start-onboarding",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"user_id\": \"{{$node['Insert User'].json[0].id}}\",\n  \"tenant_id\": \"{{$input.item.json.tenant_info.id}}\",\n  \"email\": \"{{$node['Insert User'].json[0].email}}\",\n  \"registration_type\": \"{{$json.registration_type}}\",\n  \"trigger_source\": \"user_registration\",\n  \"workflow_execution_id\": \"{{$execution.id}}\"\n}",
+        "options": {
+          "timeout": 10000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 3
+          }
+        }
+      },
+      "name": "Trigger Onboarding Workflow", 
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2400, 400],
+      "id": "trigger-onboarding",
+      "notes": "Trigger customer onboarding automation"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Track registration metrics\nconst userInfo = $node['Insert User'].json[0];\nconst tenantInfo = $input.item.json.tenant_info;\nconst registrationType = $input.item.json.registration_type;\n\n// Prepare metrics data\nconst metrics = [\n  {\n    tenant_id: tenantInfo.id,\n    user_id: userInfo.id,\n    metric_type: 'user_registration',\n    metric_name: 'new_user_signup',\n    value: 1,\n    dimensions: {\n      registration_type: registrationType,\n      tenant_slug: tenantInfo.slug,\n      user_timezone: $input.item.json.timezone,\n      user_locale: $input.item.json.locale\n    }\n  },\n  {\n    tenant_id: tenantInfo.id,\n    metric_type: 'tenant_activity',\n    metric_name: registrationType === 'new_tenant' ? 'tenant_created' : 'user_added_to_tenant',\n    value: 1,\n    dimensions: {\n      tenant_slug: tenantInfo.slug,\n      action: 'user_registration'\n    }\n  }\n];\n\nreturn { json: { metrics } };"
+      },
+      "name": "Prepare Usage Metrics",
+      "type": "n8n-nodes-base.function",
+      "position": [2600, 400],
+      "id": "prepare-metrics",
+      "notes": "Prepare usage metrics for analytics"
+    },
+    {
+      "parameters": {
+        "batchSize": 100,
+        "options": {}
+      },
+      "name": "Split Metrics",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [2800, 400],
+      "id": "split-metrics",
+      "notes": "Split metrics for individual insertion"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "usage_metrics",
+        "columns": "tenant_id,user_id,metric_type,metric_name,value,dimensions,timestamp,date",
+        "additionalFields": {
+          "returnFields": "id,metric_name,value",
+          "upsert": false
+        }
+      },
+      "name": "Insert Usage Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [3000, 400],
+      "id": "insert-metrics",
+      "notes": "Store usage metrics for analytics"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare final response\nconst userInfo = $node['Insert User'].json[0];\nconst tenantInfo = $node['Hash Password & Prepare Data'].json.tenant_info;\nconst linkInfo = $node['Link User to Tenant'].json[0];\nconst onboardingInfo = $node['Initialize Onboarding'].json[0];\n\nconst response = {\n  success: true,\n  message: 'User registered successfully',\n  data: {\n    user: {\n      id: userInfo.id,\n      email: userInfo.email,\n      first_name: userInfo.first_name,\n      last_name: userInfo.last_name,\n      created_at: userInfo.created_at\n    },\n    tenant: {\n      id: tenantInfo.id,\n      name: tenantInfo.name,\n      slug: tenantInfo.slug\n    },\n    role: linkInfo.role,\n    onboarding: {\n      id: onboardingInfo.id,\n      current_step: onboardingInfo.current_step,\n      checklist: onboardingInfo.checklist\n    }\n  },\n  next_steps: {\n    verify_email: true,\n    complete_onboarding: true,\n    setup_profile: true\n  },\n  metadata: {\n    registration_type: $node['Validate & Process Input'].json.registration_type,\n    workflow_execution_id: $execution.id,\n    timestamp: new Date().toISOString()\n  }\n};\n\nreturn { json: response };"
+      },
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.function",
+      "position": [3200, 400],
+      "id": "prepare-response",
+      "notes": "Prepare comprehensive registration response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "responseHeaders": {
+          "Content-Type": "application/json",
+          "X-Tenant-ID": "={{$node['Hash Password & Prepare Data'].json.tenant_info.id}}",
+          "X-User-ID": "={{$node['Insert User'].json[0].id}}"
+        },
+        "responseCode": 201
+      },
+      "name": "Registration Response",
+      "type": "n8n-nodes-base.respondToWebhook", 
+      "position": [3400, 400],
+      "id": "registration-response",
+      "notes": "Send successful registration response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": {\n    \"message\": \"{{$json.error.message || 'Registration failed'}}\",\n    \"type\": \"registration_error\",\n    \"timestamp\": \"{{new Date().toISOString()}}\",\n    \"workflow_execution_id\": \"{{$execution.id}}\"\n  }\n}",
+        "responseHeaders": {
+          "Content-Type": "application/json"
+        },
+        "responseCode": 400
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [600, 600],
+      "id": "error-response", 
+      "notes": "Handle registration errors"
+    }
+  ],
+  "connections": {
+    "Registration Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Process Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Process Input": {
+      "main": [
+        [
+          {
+            "node": "Check Registration Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Registration Type": {
+      "main": [
+        [
+          {
+            "node": "Create New Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Existing Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Tenant": {
+      "main": [
+        [
+          {
+            "node": "Hash Password & Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New Tenant": {
+      "main": [
+        [
+          {
+            "node": "Hash Password & Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash Password & Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Insert User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert User": {
+      "main": [
+        [
+          {
+            "node": "Link User to Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link User to Tenant": {
+      "main": [
+        [
+          {
+            "node": "Initialize Onboarding", 
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Create Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Insert Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Trigger Onboarding Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Onboarding Workflow": {
+      "main": [
+        [
+          {
+            "node": "Prepare Usage Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Usage Metrics": {
+      "main": [
+        [
+          {
+            "node": "Split Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Metrics": {
+      "main": [
+        [
+          {
+            "node": "Insert Usage Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Usage Metrics": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Registration Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "multi-tenant",
+      "name": "Multi-Tenant"
+    },
+    {
+      "id": "user-management", 
+      "name": "User Management"
+    },
+    {
+      "id": "registration",
+      "name": "Registration"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "2.0.0"
+}

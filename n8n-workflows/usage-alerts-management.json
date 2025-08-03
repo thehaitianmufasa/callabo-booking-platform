@@ -1,0 +1,492 @@
+{
+  "name": "Usage Alerts Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/manage-usage-alerts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-alert-management",
+      "name": "Alert Management Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "usage-alerts-management"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create,update,delete,list,test",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-alert-request",
+      "name": "Validate Alert Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "action-switch",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "route-alert-action",
+      "name": "Route Alert Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateUsageAlert($tenant_id: String!, $metric_type: String!, $alert_name: String!, $threshold_type: String!, $threshold_value: Float!, $alert_type: String!, $cooldown_minutes: Int!, $is_active: Boolean!) {\n  insert_usage_alerts_one(object: {\n    tenant_id: $tenant_id,\n    metric_type: $metric_type,\n    alert_name: $alert_name,\n    threshold_type: $threshold_type,\n    threshold_value: $threshold_value,\n    alert_type: $alert_type,\n    cooldown_minutes: $cooldown_minutes,\n    is_active: $is_active,\n    created_at: \"now()\"\n  }) {\n    id\n    alert_name\n    threshold_value\n    alert_type\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-alert-management').item.json.tenant_id,\n  \"metric_type\": $('webhook-alert-management').item.json.metric_type,\n  \"alert_name\": $('webhook-alert-management').item.json.alert_name,\n  \"threshold_type\": $('webhook-alert-management').item.json.threshold_type || 'percentage',\n  \"threshold_value\": $('webhook-alert-management').item.json.threshold_value,\n  \"alert_type\": $('webhook-alert-management').item.json.alert_type || 'warning',\n  \"cooldown_minutes\": $('webhook-alert-management').item.json.cooldown_minutes || 60,\n  \"is_active\": $('webhook-alert-management').item.json.is_active !== false\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-usage-alert",
+      "name": "Create Usage Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateUsageAlert($alert_id: Int!, $alert_name: String, $threshold_value: Float, $alert_type: String, $cooldown_minutes: Int, $is_active: Boolean) {\n  update_usage_alerts_by_pk(\n    pk_columns: {id: $alert_id},\n    _set: {\n      alert_name: $alert_name,\n      threshold_value: $threshold_value,\n      alert_type: $alert_type,\n      cooldown_minutes: $cooldown_minutes,\n      is_active: $is_active,\n      updated_at: \"now()\"\n    }\n  ) {\n    id\n    alert_name\n    threshold_value\n    is_active\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"alert_id\": $('webhook-alert-management').item.json.alert_id,\n  \"alert_name\": $('webhook-alert-management').item.json.alert_name,\n  \"threshold_value\": $('webhook-alert-management').item.json.threshold_value,\n  \"alert_type\": $('webhook-alert-management').item.json.alert_type,\n  \"cooldown_minutes\": $('webhook-alert-management').item.json.cooldown_minutes,\n  \"is_active\": $('webhook-alert-management').item.json.is_active\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-usage-alert",
+      "name": "Update Usage Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation DeleteUsageAlert($alert_id: Int!) {\n  delete_usage_alerts_by_pk(id: $alert_id) {\n    id\n    alert_name\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"alert_id\": $('webhook-alert-management').item.json.alert_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "delete-usage-alert",
+      "name": "Delete Usage Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query ListUsageAlerts($tenant_id: String!) {\n  usage_alerts(\n    where: {tenant_id: {_eq: $tenant_id}},\n    order_by: {created_at: desc}\n  ) {\n    id\n    metric_type\n    alert_name\n    threshold_type\n    threshold_value\n    alert_type\n    cooldown_minutes\n    is_active\n    last_triggered_at\n    created_at\n    updated_at\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-alert-management').item.json.tenant_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-usage-alerts",
+      "name": "List Usage Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/track-usage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('webhook-alert-management').item.json.tenant_id }}"
+            },
+            {
+              "name": "metric_type",
+              "value": "={{ $('webhook-alert-management').item.json.metric_type }}"
+            },
+            {
+              "name": "usage_value",
+              "value": "={{ $('webhook-alert-management').item.json.test_usage_value || 1000 }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ {\n  \"test_alert\": true,\n  \"alert_id\": $('webhook-alert-management').item.json.alert_id,\n  \"test_scenario\": \"alert_test\"\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "test-alert-trigger",
+      "name": "Test Alert Trigger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "="{{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateDefaultUsageAlerts($tenant_id: String!) {\n  insert_usage_alerts(objects: [\n    {\n      tenant_id: $tenant_id,\n      metric_type: \"api_calls\",\n      alert_name: \"API Calls Warning\",\n      threshold_type: \"percentage\",\n      threshold_value: 80,\n      alert_type: \"warning\",\n      cooldown_minutes: 60,\n      is_active: true\n    },\n    {\n      tenant_id: $tenant_id,\n      metric_type: \"api_calls\",\n      alert_name: \"API Calls Limit\",\n      threshold_type: \"percentage\",\n      threshold_value: 100,\n      alert_type: \"critical\",\n      cooldown_minutes: 30,\n      is_active: true\n    },\n    {\n      tenant_id: $tenant_id,\n      metric_type: \"agent_executions\",\n      alert_name: \"Agent Executions Warning\",\n      threshold_type: \"percentage\",\n      threshold_value: 80,\n      alert_type: \"warning\",\n      cooldown_minutes: 60,\n      is_active: true\n    },\n    {\n      tenant_id: $tenant_id,\n      metric_type: \"storage_usage\",\n      alert_name: \"Storage Usage Warning\",\n      threshold_type: \"percentage\",\n      threshold_value: 85,\n      alert_type: \"warning\",\n      cooldown_minutes: 120,\n      is_active: true\n    },\n    {\n      tenant_id: $tenant_id,\n      metric_type: \"compute_time\",\n      alert_name: \"Compute Time Warning\",\n      threshold_type: \"percentage\",\n      threshold_value: 90,\n      alert_type: \"warning\",\n      cooldown_minutes: 30,\n      is_active: true\n    }\n  ], on_conflict: {\n    constraint: usage_alerts_tenant_id_metric_type_alert_name_key,\n    update_columns: [threshold_value, alert_type, cooldown_minutes, is_active]\n  }) {\n    affected_rows\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('webhook-alert-management').item.json.tenant_id\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "setup-default-alerts",
+      "name": "Setup Default Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"success\",\n  \"action\": $('webhook-alert-management').item.json.action,\n  \"tenant_id\": $('webhook-alert-management').item.json.tenant_id,\n  \"data\": $json.data || $json\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 350]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"status\": \"error\",\n  \"message\": \"Alert management request failed validation\",\n  \"tenant_id\": $('webhook-alert-management').item.json.tenant_id\n} }}",
+        "options": {}
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Alert Management Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Alert Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Alert Request": {
+      "main": [
+        [
+          {
+            "node": "Route Alert Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Alert Action": {
+      "main": [
+        [
+          {
+            "node": "Create Usage Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Usage Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Usage Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Usage Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Test Alert Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Default Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Usage Alert": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Usage Alert": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Usage Alert": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Usage Alerts": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Alert Trigger": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Default Alerts": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["alerts", "usage", "management", "limits", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

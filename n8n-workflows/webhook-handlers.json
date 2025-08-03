@@ -1,0 +1,990 @@
+{
+  "name": "Webhook Integration Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/webhook/receive",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "webhook-receiver"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "request-id",
+              "name": "request_id",
+              "value": "={{ $now.format('YYYY-MM-DD-HH-mm-ss') }}-{{ $randomString(8) }}",
+              "type": "string"
+            },
+            {
+              "id": "received-at",
+              "name": "received_at",
+              "value": "={{ $now.toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "source-ip",
+              "name": "source_ip",
+              "value": "={{ $request.headers['x-forwarded-for'] || $request.headers['x-real-ip'] || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "user-agent",
+              "name": "user_agent",
+              "value": "={{ $request.headers['user-agent'] || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "content-type",
+              "name": "content_type",
+              "value": "={{ $request.headers['content-type'] || 'unknown' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "capture-request-metadata",
+      "name": "Capture Request Metadata",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature-check",
+              "leftValue": "={{ $request.headers['x-webhook-signature'] || $request.headers['x-hub-signature-256'] || $request.headers['signature'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "tenant-check",
+              "leftValue": "={{ $json.tenant_id || $request.headers['x-tenant-id'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "webhook-type-check",
+              "leftValue": "={{ $json.webhook_type || $request.headers['x-webhook-type'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate-webhook",
+      "name": "Validate Webhook",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "signature",
+              "name": "signature",
+              "value": "={{ $request.headers['x-webhook-signature'] || $request.headers['x-hub-signature-256'] || $request.headers['signature'] }}",
+              "type": "string"
+            },
+            {
+              "id": "tenant-id",
+              "name": "tenant_id",
+              "value": "={{ $('webhook-receiver').item.json.tenant_id || $request.headers['x-tenant-id'] }}",
+              "type": "string"
+            },
+            {
+              "id": "webhook-type",
+              "name": "webhook_type",
+              "value": "={{ $('webhook-receiver').item.json.webhook_type || $request.headers['x-webhook-type'] }}",
+              "type": "string"
+            },
+            {
+              "id": "webhook-source",
+              "name": "webhook_source",
+              "value": "={{ $('webhook-receiver').item.json.source || $request.headers['x-webhook-source'] || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "payload",
+              "name": "payload",
+              "value": "={{ $('webhook-receiver').item.json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-webhook-data",
+      "name": "Extract Webhook Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query GetWebhookConfig($tenant_id: String!, $webhook_type: String!) {\n  webhook_configurations(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      webhook_type: {_eq: $webhook_type},\n      is_active: {_eq: true}\n    }\n  ) {\n    id\n    webhook_secret\n    validation_rules\n    transformation_rules\n    target_workflows\n    retry_config\n  }\n  tenants_by_pk(id: $tenant_id) {\n    id\n    name\n    is_active\n    webhook_settings\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $json.tenant_id,\n  \"webhook_type\": $json.webhook_type\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-webhook-config",
+      "name": "Get Webhook Configuration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "signature-validation",
+              "name": "signature_valid",
+              "value": "={{ \n  (() => {\n    const signature = $('Extract Webhook Data').item.json.signature;\n    const payload = JSON.stringify($('Extract Webhook Data').item.json.payload);\n    const secret = $json.data.webhook_configurations[0]?.webhook_secret;\n    \n    if (!signature || !secret) {\n      return false;\n    }\n    \n    // Handle different signature formats\n    let expectedSig;\n    if (signature.startsWith('sha256=')) {\n      const crypto = require('crypto');\n      expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');\n    } else if (signature.startsWith('sha1=')) {\n      const crypto = require('crypto');\n      expectedSig = 'sha1=' + crypto.createHmac('sha1', secret).update(payload).digest('hex');\n    } else {\n      const crypto = require('crypto');\n      expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('hex');\n    }\n    \n    return signature === expectedSig;\n  })()\n}}",
+              "type": "boolean"
+            },
+            {
+              "id": "webhook-config",
+              "name": "webhook_config",
+              "value": "={{ $json.data.webhook_configurations[0] || {} }}",
+              "type": "object"
+            },
+            {
+              "id": "tenant-active",
+              "name": "tenant_active",
+              "value": "={{ $json.data.tenants_by_pk?.is_active || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "validate-signature",
+      "name": "Validate Signature",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature-valid",
+              "leftValue": "={{ $json.signature_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "tenant-active",
+              "leftValue": "={{ $json.tenant_active }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "security-check",
+      "name": "Security Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation LogWebhookReceived($request_id: String!, $tenant_id: String!, $webhook_type: String!, $webhook_source: String!, $payload: jsonb!, $metadata: jsonb!, $status: String!, $processed_at: timestamptz!) {\n  insert_webhook_logs_one(object: {\n    request_id: $request_id,\n    tenant_id: $tenant_id,\n    webhook_type: $webhook_type,\n    webhook_source: $webhook_source,\n    payload: $payload,\n    metadata: $metadata,\n    status: $status,\n    processed_at: $processed_at\n  }) {\n    id\n    request_id\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"tenant_id\": $('Extract Webhook Data').item.json.tenant_id,\n  \"webhook_type\": $('Extract Webhook Data').item.json.webhook_type,\n  \"webhook_source\": $('Extract Webhook Data').item.json.webhook_source,\n  \"payload\": $('Extract Webhook Data').item.json.payload,\n  \"metadata\": {\n    \"source_ip\": $('Capture Request Metadata').item.json.source_ip,\n    \"user_agent\": $('Capture Request Metadata').item.json.user_agent,\n    \"content_type\": $('Capture Request Metadata').item.json.content_type,\n    \"signature_valid\": $('Validate Signature').item.json.signature_valid\n  },\n  \"status\": \"received\",\n  \"processed_at\": $('Capture Request Metadata').item.json.received_at\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-webhook-received",
+      "name": "Log Webhook Received",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "webhook-type-router",
+              "leftValue": "={{ $('Extract Webhook Data').item.json.webhook_type }}",
+              "rightValue": "github",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "route-webhook-type",
+      "name": "Route by Webhook Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "github-event",
+              "name": "github_event",
+              "value": "={{ $request.headers['x-github-event'] }}",
+              "type": "string"
+            },
+            {
+              "id": "repository",
+              "name": "repository",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.repository?.full_name }}",
+              "type": "string"
+            },
+            {
+              "id": "action",
+              "name": "action",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.action }}",
+              "type": "string"
+            },
+            {
+              "id": "branch",
+              "name": "branch",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.ref?.replace('refs/heads/', '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "process-github-webhook",
+      "name": "Process GitHub Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2220, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "push-event",
+              "leftValue": "={{ $json.github_event }}",
+              "rightValue": "push",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-github-event",
+      "name": "Check GitHub Event",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/deploy",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('Extract Webhook Data').item.json.tenant_id }}"
+            },
+            {
+              "name": "environment",
+              "value": "={{ $('Process GitHub Webhook').item.json.branch === 'main' ? 'production' : $('Process GitHub Webhook').item.json.branch === 'staging' ? 'staging' : 'development' }}"
+            },
+            {
+              "name": "github_username",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.repository.owner.login }}"
+            },
+            {
+              "name": "repository",
+              "value": "={{ $('Process GitHub Webhook').item.json.repository }}"
+            },
+            {
+              "name": "branch",
+              "value": "={{ $('Process GitHub Webhook').item.json.branch }}"
+            },
+            {
+              "name": "commit_sha",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.after }}"
+            },
+            {
+              "name": "triggered_by",
+              "value": "github_webhook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-deployment",
+      "name": "Trigger Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "stripe-event",
+              "name": "stripe_event",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.type }}",
+              "type": "string"
+            },
+            {
+              "id": "customer-id",
+              "name": "customer_id",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.data?.object?.customer }}",
+              "type": "string"
+            },
+            {
+              "id": "subscription-id",
+              "name": "subscription_id",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.data?.object?.subscription }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "process-stripe-webhook",
+      "name": "Process Stripe Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "slack-event",
+              "name": "slack_event",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.type }}",
+              "type": "string"
+            },
+            {
+              "id": "team-id",
+              "name": "team_id",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.team_id }}",
+              "type": "string"
+            },
+            {
+              "id": "user-id",
+              "name": "user_id",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.event?.user }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "process-slack-webhook",
+      "name": "Process Slack Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "event-type",
+              "name": "event_type",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.event_type }}",
+              "type": "string"
+            },
+            {
+              "id": "event-data",
+              "name": "event_data",
+              "value": "={{ $('Extract Webhook Data').item.json.payload.data }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "process-custom-webhook",
+      "name": "Process Custom Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2220, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('Extract Webhook Data').item.json.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "system"
+            },
+            {
+              "name": "message",
+              "value": "Webhook received: {{ $('Extract Webhook Data').item.json.webhook_type }} from {{ $('Extract Webhook Data').item.json.webhook_source }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ {\n  \"webhook_type\": $('Extract Webhook Data').item.json.webhook_type,\n  \"webhook_source\": $('Extract Webhook Data').item.json.webhook_source,\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"processed_at\": $('Capture Request Metadata').item.json.received_at\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-webhook-notification",
+      "name": "Send Webhook Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpdateWebhookStatus($request_id: String!, $status: String!, $response_data: jsonb) {\n  update_webhook_logs(\n    where: {request_id: {_eq: $request_id}},\n    _set: {\n      status: $status,\n      response_data: $response_data,\n      completed_at: \"now()\"\n    }\n  ) {\n    affected_rows\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"status\": \"processed\",\n  \"response_data\": {\n    \"webhook_type\": $('Extract Webhook Data').item.json.webhook_type,\n    \"processing_result\": \"success\",\n    \"actions_triggered\": [\n      $('Extract Webhook Data').item.json.webhook_type === 'github' ? 'deployment' : 'notification'\n    ]\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-webhook-status",
+      "name": "Update Webhook Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation LogWebhookError($request_id: String!, $tenant_id: String, $error_type: String!, $error_message: String!, $metadata: jsonb!) {\n  insert_webhook_logs_one(object: {\n    request_id: $request_id,\n    tenant_id: $tenant_id,\n    webhook_type: \"unknown\",\n    webhook_source: \"unknown\",\n    payload: {},\n    metadata: $metadata,\n    status: $error_type,\n    error_message: $error_message,\n    processed_at: \"now()\"\n  }) {\n    id\n    request_id\n    status\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"tenant_id\": $('Extract Webhook Data').item.json.tenant_id || null,\n  \"error_type\": \"validation_failed\",\n  \"error_message\": \"Webhook validation failed - missing required headers or invalid signature\",\n  \"metadata\": {\n    \"source_ip\": $('Capture Request Metadata').item.json.source_ip,\n    \"user_agent\": $('Capture Request Metadata').item.json.user_agent,\n    \"content_type\": $('Capture Request Metadata').item.json.content_type,\n    \"signature_provided\": !!$request.headers['x-webhook-signature'],\n    \"tenant_id_provided\": !!($('webhook-receiver').item.json.tenant_id || $request.headers['x-tenant-id']),\n    \"webhook_type_provided\": !!($('webhook-receiver').item.json.webhook_type || $request.headers['x-webhook-type'])\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-webhook-error",
+      "name": "Log Webhook Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation LogSecurityError($request_id: String!, $tenant_id: String!, $error_message: String!, $metadata: jsonb!) {\n  update_webhook_logs(\n    where: {request_id: {_eq: $request_id}},\n    _set: {\n      status: \"security_failed\",\n      error_message: $error_message,\n      completed_at: \"now()\"\n    }\n  ) {\n    affected_rows\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"tenant_id\": $('Extract Webhook Data').item.json.tenant_id,\n  \"error_message\": \"Security validation failed - invalid signature or inactive tenant\",\n  \"metadata\": {\n    \"signature_valid\": $('Validate Signature').item.json.signature_valid,\n    \"tenant_active\": $('Validate Signature').item.json.tenant_active,\n    \"webhook_config_found\": !!$('Validate Signature').item.json.webhook_config.id\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-security-error",
+      "name": "Log Security Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"status\": \"success\",\n  \"message\": \"Webhook processed successfully\",\n  \"webhook_type\": $('Extract Webhook Data').item.json.webhook_type,\n  \"tenant_id\": $('Extract Webhook Data').item.json.tenant_id,\n  \"processed_at\": $('Capture Request Metadata').item.json.received_at\n} }}",
+        "options": {}
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2880, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"status\": \"error\",\n  \"message\": \"Webhook validation failed\",\n  \"error\": \"Missing required headers or invalid format\"\n} }}",
+        "options": {}
+      },
+      "id": "validation-error-response",
+      "name": "Validation Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"request_id\": $('Capture Request Metadata').item.json.request_id,\n  \"status\": \"error\",\n  \"message\": \"Security validation failed\",\n  \"error\": \"Invalid signature or unauthorized tenant\"\n} }}",
+        "options": {}
+      },
+      "id": "security-error-response",
+      "name": "Security Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Receiver": {
+      "main": [
+        [
+          {
+            "node": "Capture Request Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Request Metadata": {
+      "main": [
+        [
+          {
+            "node": "Validate Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Webhook Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Get Webhook Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Webhook Configuration": {
+      "main": [
+        [
+          {
+            "node": "Validate Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Signature": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Log Webhook Received",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Security Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Webhook Received": {
+      "main": [
+        [
+          {
+            "node": "Route by Webhook Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Webhook Type": {
+      "main": [
+        [
+          {
+            "node": "Process GitHub Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Stripe Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Custom Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process GitHub Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check GitHub Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check GitHub Event": {
+      "main": [
+        [
+          {
+            "node": "Trigger Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Webhook Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Deployment": {
+      "main": [
+        [
+          {
+            "node": "Update Webhook Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Stripe Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Webhook Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Slack Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Webhook Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Custom Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Webhook Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Webhook Notification": {
+      "main": [
+        [
+          {
+            "node": "Update Webhook Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Webhook Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Webhook Error": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Security Error": {
+      "main": [
+        [
+          {
+            "node": "Security Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["webhooks", "integrations", "security", "routing", "multi-tenant"],
+  "triggerCount": 1,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

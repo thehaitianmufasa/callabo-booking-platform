@@ -1,0 +1,579 @@
+{
+  "name": "Multi-Tenant Error Alerting System",
+  "id": "error-alerts-multitenant",
+  "version": "2.0.0",
+  "description": "Advanced error monitoring and alerting system with multi-tenant support, agent monitoring integration, and intelligent escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "error-alert",
+        "options": {
+          "responseMode": "responseNode"
+        },
+        "authentication": "none"
+      },
+      "name": "Error Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [200, 400],
+      "id": "error-webhook",
+      "notes": "Receives error alerts from applications and agents"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Enhanced error processing with tenant context\nconst input = $input.item.json;\n\n// Extract tenant context from various sources\nconst extractTenantId = () => {\n  // From direct input\n  if (input.tenant_id) return input.tenant_id;\n  \n  // From headers\n  if (input.headers && input.headers['x-tenant-id']) return input.headers['x-tenant-id'];\n  \n  // From user context (need to lookup)\n  if (input.user_id) return 'lookup_required';\n  \n  return null;\n};\n\n// Classify error severity and type\nconst classifyError = (error, severity) => {\n  const errorText = (error || '').toLowerCase();\n  \n  // Critical patterns\n  if (errorText.includes('database') && errorText.includes('connection')) {\n    return { severity: 'critical', category: 'infrastructure', escalate: true };\n  }\n  if (errorText.includes('payment') || errorText.includes('billing')) {\n    return { severity: 'high', category: 'financial', escalate: true };\n  }\n  if (errorText.includes('security') || errorText.includes('unauthorized')) {\n    return { severity: 'critical', category: 'security', escalate: true };\n  }\n  if (errorText.includes('agent') && errorText.includes('failed')) {\n    return { severity: 'high', category: 'agent_failure', escalate: false };\n  }\n  \n  // Use provided severity or default\n  const sev = severity || 'medium';\n  return { \n    severity: sev, \n    category: 'general', \n    escalate: sev === 'critical' || sev === 'high' \n  };\n};\n\nconst tenantId = extractTenantId();\nconst errorClassification = classifyError(input.error, input.severity);\n\n// Create comprehensive error data\nconst errorData = {\n  tenant_id: tenantId,\n  user_id: input.user_id || null,\n  error_message: input.error || 'Unknown error',\n  severity: errorClassification.severity,\n  category: errorClassification.category,\n  context: input.context || 'Unknown context',\n  source: input.source || 'System',\n  stack_trace: input.stack || input.stackTrace || null,\n  request_id: input.request_id || null,\n  session_id: input.session_id || null,\n  ip_address: input.ip_address || input.headers?.['x-forwarded-for'] || 'unknown',\n  user_agent: input.user_agent || input.headers?.['user-agent'] || 'unknown',\n  timestamp: new Date().toISOString(),\n  alert_id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,\n  escalate: errorClassification.escalate,\n  tenant_lookup_required: tenantId === 'lookup_required',\n  metadata: {\n    workflow_execution_id: $execution.id,\n    n8n_workflow_id: $workflow.id,\n    environment: input.environment || 'production',\n    version: input.app_version || 'unknown'\n  }\n};\n\nreturn { json: errorData };"
+      },
+      "name": "Process & Classify Error",
+      "type": "n8n-nodes-base.function",
+      "position": [400, 400],
+      "id": "process-classify-error",
+      "notes": "Processes and classifies errors with tenant context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.tenant_lookup_required}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Need Tenant Lookup?",
+      "type": "n8n-nodes-base.if",
+      "position": [600, 400],
+      "id": "need-tenant-lookup",
+      "notes": "Check if we need to lookup tenant from user"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Lookup tenant from user ID\nSELECT \n  tu.tenant_id,\n  t.name as tenant_name,\n  t.slug as tenant_slug,\n  t.plan_type,\n  tu.role as user_role\nFROM tenant_users tu\nJOIN tenants t ON tu.tenant_id = t.id\nWHERE tu.user_id = $1 AND tu.status = 'active'\nLIMIT 1",
+        "additionalFields": {
+          "mode": "list",
+          "queryParams": "={{$json.user_id}}"
+        }
+      },
+      "name": "Lookup Tenant",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [800, 300],
+      "id": "lookup-tenant",
+      "notes": "Lookup tenant information from user ID"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge tenant information\nconst errorData = $node['Process & Classify Error'].json;\nconst tenantInfo = $node['Lookup Tenant']?.json?.[0];\n\nif (tenantInfo) {\n  errorData.tenant_id = tenantInfo.tenant_id;\n  errorData.tenant_name = tenantInfo.tenant_name;\n  errorData.tenant_slug = tenantInfo.tenant_slug;\n  errorData.user_role = tenantInfo.user_role;\n} else if (errorData.tenant_lookup_required) {\n  // Couldn't find tenant, treat as system error\n  errorData.tenant_id = null;\n  errorData.severity = 'high';\n  errorData.category = 'orphaned_error';\n}\n\ndelete errorData.tenant_lookup_required;\nreturn { json: errorData };"
+      },
+      "name": "Merge Tenant Info",
+      "type": "n8n-nodes-base.function",
+      "position": [1000, 400],
+      "id": "merge-tenant-info",
+      "notes": "Merge tenant information into error data"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "audit_logs",
+        "columns": "tenant_id,user_id,action,resource_type,resource_id,new_values,ip_address,user_agent,metadata",
+        "additionalFields": {
+          "returnFields": "id,created_at",
+          "upsert": false
+        }
+      },
+      "name": "Create Error Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [1200, 400],
+      "id": "create-audit-log",
+      "notes": "Log error event for audit trail"
+    },
+    {
+      "parameters": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation CreateErrorLog($object: audit_logs_insert_input!) {\n  insert_audit_logs_one(object: $object) {\n    id\n    created_at\n  }\n}",
+        "variables": {
+          "object": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "user_id": "={{ $json.user_id }}",
+            "action": "ERROR_OCCURRED",
+            "resource_type": "error_alert",
+            "resource_id": "={{ $json.alert_id }}",
+            "new_values": "={{ $json }}",
+            "ip_address": "={{ $json.ip_address }}",
+            "user_agent": "={{ $json.user_agent }}",
+            "metadata": "={{ $json.metadata }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "Content-Type": "application/json"
+        }
+      },
+      "name": "Log to Hasura",
+      "type": "n8n-nodes-base.graphql",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hasura-admin",
+          "name": "Hasura Admin Access"
+        }
+      },
+      "position": [1400, 400],
+      "id": "log-to-hasura",
+      "notes": "Store error in Hasura for real-time monitoring"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.severity}}",
+              "operation": "equal",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "name": "Critical Error?",
+      "type": "n8n-nodes-base.if",
+      "position": [1600, 400],
+      "id": "check-critical",
+      "notes": "Route critical errors for immediate escalation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.severity}}",
+              "operation": "equal",
+              "value2": "high"
+            }
+          ]
+        }
+      },
+      "name": "High Priority?",
+      "type": "n8n-nodes-base.if",
+      "position": [1600, 600],
+      "id": "check-high-priority",
+      "notes": "Route high priority errors for escalation"
+    },
+    {
+      "parameters": {
+        "channel": "${SLACK_ERROR_CHANNEL}",
+        "text": "🚨 **CRITICAL ERROR ALERT** 🚨\n\n**Tenant:** {{$json.tenant_name || 'System'}} ({{$json.tenant_slug || 'N/A'}})\n**Error:** {{$json.error_message}}\n**Category:** {{$json.category}}\n**Source:** {{$json.source}}\n**Context:** {{$json.context}}\n**Time:** {{$json.timestamp}}\n**Alert ID:** {{$json.alert_id}}\n\n{{#if $json.user_id}}\n**User:** {{$json.user_id}} ({{$json.user_role || 'unknown'}})\n{{/if}}\n\n{{#if $json.stack_trace}}\n**Stack Trace:**\n```\n{{$json.stack_trace}}\n```\n{{/if}}\n\n@channel - **IMMEDIATE ATTENTION REQUIRED**",
+        "username": "🚨 Critical Alert Bot",
+        "iconEmoji": ":rotating_light:"
+      },
+      "name": "Critical Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-notifications",
+          "name": "Slack Notification Bot"
+        }
+      },
+      "position": [1800, 300],
+      "id": "critical-slack-alert",
+      "notes": "Send critical alert to Slack with @channel mention"
+    },
+    {
+      "parameters": {
+        "to": "${ADMIN_EMAIL}",
+        "cc": "${TECH_LEAD_EMAIL}",
+        "subject": "🚨 CRITICAL: {{$json.category}} Error - {{$json.tenant_name || 'System'}} - {{$json.alert_id}}",
+        "html": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f8f9fa; }\n    .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; padding: 25px; text-align: center; }\n    .content { padding: 30px; }\n    .alert-box { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px; margin: 20px 0; }\n    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }\n    .info-item { background: #f8f9fa; padding: 15px; border-radius: 5px; }\n    .info-label { font-weight: bold; color: #495057; margin-bottom: 5px; }\n    .stack-trace { background: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }\n    .action-buttons { text-align: center; margin: 25px 0; }\n    .button { display: inline-block; background: #dc3545; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 5px; font-weight: 600; }\n    .button.secondary { background: #6c757d; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🚨 CRITICAL ERROR ALERT</h1>\n      <p>Immediate attention required for {{$json.tenant_name || 'System'}} workspace</p>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"alert-box\">\n        <strong>⚠️ CRITICAL SYSTEM ERROR DETECTED</strong><br>\n        This error requires immediate investigation and resolution.\n      </div>\n      \n      <div class=\"info-grid\">\n        <div class=\"info-item\">\n          <div class=\"info-label\">Workspace</div>\n          <div>{{$json.tenant_name || 'System'}} ({{$json.tenant_slug || 'N/A'}})</div>\n        </div>\n        <div class=\"info-item\">\n          <div class=\"info-label\">Alert ID</div>\n          <div>{{$json.alert_id}}</div>\n        </div>\n        <div class=\"info-item\">\n          <div class=\"info-label\">Severity</div>\n          <div style=\"color: #dc3545; font-weight: bold;\">{{$json.severity | upper}}</div>\n        </div>\n        <div class=\"info-item\">\n          <div class=\"info-label\">Category</div>\n          <div>{{$json.category}}</div>\n        </div>\n        <div class=\"info-item\">\n          <div class=\"info-label\">Source</div>\n          <div>{{$json.source}}</div>\n        </div>\n        <div class=\"info-item\">\n          <div class=\"info-label\">Timestamp</div>\n          <div>{{$json.timestamp}}</div>\n        </div>\n      </div>\n      \n      <div class=\"info-item\">\n        <div class=\"info-label\">Error Message</div>\n        <div style=\"color: #dc3545; font-weight: 500;\">{{$json.error_message}}</div>\n      </div>\n      \n      <div class=\"info-item\">\n        <div class=\"info-label\">Context</div>\n        <div>{{$json.context}}</div>\n      </div>\n      \n      {{#if $json.user_id}}\n      <div class=\"info-item\">\n        <div class=\"info-label\">Affected User</div>\n        <div>{{$json.user_id}} (Role: {{$json.user_role || 'unknown'}})</div>\n      </div>\n      {{/if}}\n      \n      {{#if $json.stack_trace}}\n      <div style=\"margin: 20px 0;\">\n        <div class=\"info-label\">Stack Trace</div>\n        <div class=\"stack-trace\">{{$json.stack_trace}}</div>\n      </div>\n      {{/if}}\n      \n      <div class=\"action-buttons\">\n        <a href=\"{{process.env.HASURA_CONSOLE_URL || 'http://localhost:8080'}}/data/default/public/audit_logs/browse\" class=\"button\">View in Dashboard</a>\n        <a href=\"{{process.env.SLACK_CHANNEL_URL || '#alerts'}}\" class=\"button secondary\">Join Slack Discussion</a>\n      </div>\n      \n      <div style=\"background: #e9ecef; padding: 15px; border-radius: 5px; margin-top: 20px; font-size: 14px; color: #495057;\">\n        <strong>Next Steps:</strong><br>\n        1. Investigate the error immediately<br>\n        2. Determine root cause and impact<br>\n        3. Implement fix or workaround<br>\n        4. Update stakeholders on resolution<br>\n        5. Conduct post-incident review if needed\n      </div>\n    </div>\n  </div>\n</body>\n</html>"
+      },
+      "name": "Critical Email Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "credentials": {
+        "smtp": {
+          "id": "smtp-service",
+          "name": "SMTP Email Service"
+        }
+      },
+      "position": [2000, 300],
+      "id": "critical-email-alert",
+      "notes": "Send detailed critical error email to administrators"
+    },
+    {
+      "parameters": {
+        "webhook_url": "${DISCORD_WEBHOOK_URL}",
+        "content": "🚨 **CRITICAL ERROR** in {{$json.tenant_name || 'System'}}\n\n**Error:** {{$json.error_message}}\n**Category:** {{$json.category}}\n**Source:** {{$json.source}}\n**Time:** {{$json.timestamp}}\n**Alert ID:** {{$json.alert_id}}\n\n@everyone - Critical attention needed!",
+        "username": "Callabo Critical Alerts",
+        "avatar_url": "${DISCORD_BOT_AVATAR_URL}"
+      },
+      "name": "Critical Discord Alert",
+      "type": "n8n-nodes-base.webhook",
+      "position": [2200, 300],
+      "id": "critical-discord-alert",
+      "notes": "Send critical alert to Discord community channel"
+    },
+    {
+      "parameters": {
+        "channel": "${SLACK_DEFAULT_CHANNEL}",
+        "text": "⚠️ **High Priority Error**\n\n**Tenant:** {{$json.tenant_name || 'System'}} ({{$json.tenant_slug || 'N/A'}})\n**Error:** {{$json.error_message}}\n**Category:** {{$json.category}}\n**Source:** {{$json.source}}\n**Context:** {{$json.context}}\n**Time:** {{$json.timestamp}}\n**Alert ID:** {{$json.alert_id}}\n\n{{#if $json.user_id}}\n**User:** {{$json.user_id}}\n{{/if}}\n\nRequires attention within 2 hours.",
+        "username": "⚠️ High Priority Alert",
+        "iconEmoji": ":warning:"
+      },
+      "name": "High Priority Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-notifications",
+          "name": "Slack Notification Bot"
+        }
+      },
+      "position": [1800, 500],
+      "id": "high-priority-slack",
+      "notes": "Send high priority alert to default Slack channel"
+    },
+    {
+      "parameters": {
+        "channel": "${SLACK_DEFAULT_CHANNEL}",
+        "text": "ℹ️ **System Alert**\n\n**Tenant:** {{$json.tenant_name || 'System'}}\n**Error:** {{$json.error_message}}\n**Source:** {{$json.source}}\n**Time:** {{$json.timestamp}}\n**Alert ID:** {{$json.alert_id}}\n\nStandard monitoring alert - no immediate action required.",
+        "username": "ℹ️ System Monitor",
+        "iconEmoji": ":information_source:"
+      },
+      "name": "Standard Alert",
+      "type": "n8n-nodes-base.slack",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-notifications",
+          "name": "Slack Notification Bot"
+        }
+      },
+      "position": [1800, 700],
+      "id": "standard-alert",
+      "notes": "Send standard monitoring alert"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Track error metrics for analytics\nconst errorData = $input.item.json;\n\n// Create metrics for this error event\nconst metrics = [\n  {\n    tenant_id: errorData.tenant_id,\n    user_id: errorData.user_id,\n    metric_type: 'error_tracking',\n    metric_name: 'error_occurred',\n    value: 1,\n    dimensions: {\n      severity: errorData.severity,\n      category: errorData.category,\n      source: errorData.source,\n      error_type: errorData.error_message.split(':')[0] || 'unknown'\n    }\n  },\n  {\n    tenant_id: errorData.tenant_id,\n    metric_type: 'system_health',\n    metric_name: `${errorData.severity}_error_count`,\n    value: 1,\n    dimensions: {\n      source: errorData.source,\n      category: errorData.category\n    }\n  }\n];\n\n// Add tenant-specific metrics if tenant exists\nif (errorData.tenant_id) {\n  metrics.push({\n    tenant_id: errorData.tenant_id,\n    metric_type: 'tenant_health',\n    metric_name: 'error_rate',\n    value: 1,\n    dimensions: {\n      tenant_slug: errorData.tenant_slug,\n      severity: errorData.severity\n    }\n  });\n}\n\nreturn { json: { metrics, alert_data: errorData } };"
+      },
+      "name": "Prepare Error Metrics",
+      "type": "n8n-nodes-base.function",
+      "position": [2400, 400],
+      "id": "prepare-error-metrics",
+      "notes": "Prepare error metrics for analytics tracking"
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "name": "Split Metrics",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [2600, 400],
+      "id": "split-metrics",
+      "notes": "Split metrics for batch insertion"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "usage_metrics",
+        "columns": "tenant_id,user_id,metric_type,metric_name,value,dimensions,timestamp,date",
+        "additionalFields": {
+          "returnFields": "id,metric_name,value",
+          "upsert": false
+        }
+      },
+      "name": "Insert Error Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "credentials": {
+        "postgres": {
+          "id": "supabase-postgres-main",
+          "name": "Supabase Multi-Tenant DB"
+        }
+      },
+      "position": [2800, 400],
+      "id": "insert-error-metrics",
+      "notes": "Store error metrics for analytics"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare comprehensive alert response\nconst alertData = $node['Prepare Error Metrics'].json.alert_data;\nconst metricsInserted = $node['Insert Error Metrics'].json;\n\nconst response = {\n  success: true,\n  message: 'Error alert processed and logged successfully',\n  data: {\n    alert_id: alertData.alert_id,\n    severity: alertData.severity,\n    category: alertData.category,\n    tenant_id: alertData.tenant_id,\n    escalated: alertData.escalate,\n    notifications_sent: {\n      slack: true,\n      email: alertData.severity === 'critical',\n      discord: alertData.severity === 'critical'\n    },\n    metrics_tracked: metricsInserted?.length || 0\n  },\n  processing: {\n    workflow_execution_id: $execution.id,\n    processed_at: new Date().toISOString(),\n    processing_time_ms: Date.now() - new Date(alertData.timestamp).getTime()\n  },\n  next_steps: {\n    monitor_resolution: true,\n    track_pattern: alertData.category !== 'general',\n    escalate_if_recurring: alertData.severity === 'high',\n    investigate_immediately: alertData.severity === 'critical'\n  }\n};\n\nreturn { json: response };"
+      },
+      "name": "Prepare Alert Response",
+      "type": "n8n-nodes-base.function",
+      "position": [3000, 400],
+      "id": "prepare-alert-response",
+      "notes": "Prepare comprehensive alert processing response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "responseHeaders": {
+          "Content-Type": "application/json",
+          "X-Alert-ID": "={{$node['Prepare Error Metrics'].json.alert_data.alert_id}}",
+          "X-Alert-Severity": "={{$node['Prepare Error Metrics'].json.alert_data.severity}}",
+          "X-Processing-Time": "={{Date.now() - new Date($node['Prepare Error Metrics'].json.alert_data.timestamp).getTime()}}ms"
+        },
+        "responseCode": 200
+      },
+      "name": "Alert Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [3200, 400],
+      "id": "alert-response",
+      "notes": "Send alert processing confirmation response"
+    }
+  ],
+  "connections": {
+    "Error Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process & Classify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process & Classify Error": {
+      "main": [
+        [
+          {
+            "node": "Need Tenant Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Need Tenant Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Tenant Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Tenant": {
+      "main": [
+        [
+          {
+            "node": "Merge Tenant Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Tenant Info": {
+      "main": [
+        [
+          {
+            "node": "Create Error Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Error Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Log to Hasura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Hasura": {
+      "main": [
+        [
+          {
+            "node": "Critical Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical Error?": {
+      "main": [
+        [
+          {
+            "node": "Critical Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Priority": {
+      "main": [
+        [
+          {
+            "node": "High Priority Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Standard Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Critical Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical Email Alert": {
+      "main": [
+        [
+          {
+            "node": "Critical Discord Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical Discord Alert": {
+      "main": [
+        [
+          {
+            "node": "Prepare Error Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Priority Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Prepare Error Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standard Alert": {
+      "main": [
+        [
+          {
+            "node": "Prepare Error Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error Metrics": {
+      "main": [
+        [
+          {
+            "node": "Split Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Metrics": {
+      "main": [
+        [
+          {
+            "node": "Insert Error Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Error Metrics": {
+      "main": [
+        [
+          {
+            "node": "Prepare Alert Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Alert Response": {
+      "main": [
+        [
+          {
+            "node": "Alert Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "multi-tenant",
+      "name": "Multi-Tenant"
+    },
+    {
+      "id": "error-monitoring",
+      "name": "Error Monitoring"
+    },
+    {
+      "id": "alerting",
+      "name": "Alerting"
+    },
+    {
+      "id": "system-health",
+      "name": "System Health"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "2.0.0"
+}

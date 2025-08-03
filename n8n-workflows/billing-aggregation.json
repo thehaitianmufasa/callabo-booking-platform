@@ -1,0 +1,593 @@
+{
+  "name": "Billing Aggregation and Reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "hourly-aggregation-trigger",
+      "name": "Hourly Aggregation",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 0 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "monthly-billing-trigger",
+      "name": "Monthly Billing",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query GetActiveTenantsForAggregation {\n  tenants(where: {is_active: {_eq: true}}) {\n    id\n    name\n    plan_limits\n    billing_settings\n  }\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-active-tenants",
+      "name": "Get Active Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data.tenants",
+        "options": {}
+      },
+      "id": "split-tenants",
+      "name": "Split Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "current-hour",
+              "name": "current_hour",
+              "value": "={{ $now.format('YYYY-MM-DD-HH') }}",
+              "type": "string"
+            },
+            {
+              "id": "billing-period",
+              "name": "billing_period",
+              "value": "={{ $now.format('YYYY-MM') }}",
+              "type": "string"
+            },
+            {
+              "id": "tenant-id",
+              "name": "tenant_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-aggregation-params",
+      "name": "Prepare Aggregation Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query AggregateHourlyUsage($tenant_id: String!, $start_time: timestamptz!, $end_time: timestamptz!) {\n  usage_records(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      recorded_at: {_gte: $start_time, _lt: $end_time}\n    }\n  ) {\n    metric_type\n    usage_value\n    estimated_cost\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $json.tenant_id,\n  \"start_time\": $json.current_hour + \":00:00.000Z\",\n  \"end_time\": new Date(new Date($json.current_hour + \":00:00.000Z\").getTime() + 60*60*1000).toISOString()\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aggregate-hourly-usage",
+      "name": "Aggregate Hourly Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hourly-aggregations",
+              "name": "hourly_aggregations",
+              "value": "={{ \n  (() => {\n    const records = $json.data.usage_records;\n    const aggregations = {};\n    \n    for (const record of records) {\n      if (!aggregations[record.metric_type]) {\n        aggregations[record.metric_type] = {\n          metric_type: record.metric_type,\n          total_usage: 0,\n          total_cost: 0,\n          record_count: 0\n        };\n      }\n      \n      aggregations[record.metric_type].total_usage += record.usage_value;\n      aggregations[record.metric_type].total_cost += record.estimated_cost;\n      aggregations[record.metric_type].record_count += 1;\n    }\n    \n    return Object.values(aggregations);\n  })()\n}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "calculate-hourly-totals",
+      "name": "Calculate Hourly Totals",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "hourly_aggregations",
+        "options": {}
+      },
+      "id": "split-hourly-metrics",
+      "name": "Split Hourly Metrics",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation UpsertHourlyAggregation($tenant_id: String!, $time_period: String!, $metric_type: String!, $total_usage: Float!, $total_cost: Float!, $record_count: Int!) {\n  insert_hourly_usage_aggregations_one(object: {\n    tenant_id: $tenant_id,\n    time_period: $time_period,\n    metric_type: $metric_type,\n    total_usage: $total_usage,\n    total_cost: $total_cost,\n    record_count: $record_count,\n    aggregated_at: \"now()\"\n  }, on_conflict: {\n    constraint: hourly_usage_aggregations_tenant_id_time_period_metric_type_key,\n    update_columns: [total_usage, total_cost, record_count, aggregated_at]\n  }) {\n    id\n    total_usage\n    total_cost\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $('Prepare Aggregation Parameters').item.json.tenant_id,\n  \"time_period\": $('Prepare Aggregation Parameters').item.json.current_hour,\n  \"metric_type\": $json.metric_type,\n  \"total_usage\": $json.total_usage,\n  \"total_cost\": $json.total_cost,\n  \"record_count\": $json.record_count\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "store-hourly-aggregation",
+      "name": "Store Hourly Aggregation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation GenerateMonthlyInvoices($billing_period: String!) {\n  tenants(where: {is_active: {_eq: true}}) {\n    id\n    name\n    billing_settings\n    plan_limits\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"billing_period\": $now.subtract(1, 'month').format('YYYY-MM')\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-tenants-for-billing",
+      "name": "Get Tenants for Billing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 500]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data.tenants",
+        "options": {}
+      },
+      "id": "split-billing-tenants",
+      "name": "Split Billing Tenants",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "query GetMonthlyUsageSummary($tenant_id: String!, $billing_period: String!) {\n  usage_aggregations(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      billing_period: {_eq: $billing_period}\n    }\n  ) {\n    metric_type\n    total_usage\n    total_cost\n  }\n  hourly_usage_aggregations(\n    where: {\n      tenant_id: {_eq: $tenant_id},\n      time_period: {_like: $billing_period}\n    }\n  ) {\n    metric_type\n    total_usage\n    total_cost\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $json.id,\n  \"billing_period\": $now.subtract(1, 'month').format('YYYY-MM') + \"%\"\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-monthly-usage",
+      "name": "Get Monthly Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "invoice-data",
+              "name": "invoice_data",
+              "value": "={{ \n  (() => {\n    const tenant = $('Split Billing Tenants').item.json;\n    const usage = $json.data.usage_aggregations;\n    const hourly = $json.data.hourly_usage_aggregations;\n    const billing_period = $now.subtract(1, 'month').format('YYYY-MM');\n    \n    // Combine usage data\n    const combined_usage = {};\n    \n    // Add main usage aggregations\n    for (const item of usage) {\n      combined_usage[item.metric_type] = {\n        metric_type: item.metric_type,\n        total_usage: item.total_usage,\n        total_cost: item.total_cost\n      };\n    }\n    \n    // Add hourly aggregations if not already present\n    for (const item of hourly) {\n      if (!combined_usage[item.metric_type]) {\n        combined_usage[item.metric_type] = {\n          metric_type: item.metric_type,\n          total_usage: 0,\n          total_cost: 0\n        };\n      }\n      combined_usage[item.metric_type].total_usage += item.total_usage;\n      combined_usage[item.metric_type].total_cost += item.total_cost;\n    }\n    \n    const usage_items = Object.values(combined_usage);\n    const total_cost = usage_items.reduce((sum, item) => sum + item.total_cost, 0);\n    \n    // Calculate overages\n    const plan_limits = tenant.plan_limits || {};\n    const overages = [];\n    \n    for (const item of usage_items) {\n      const limit = plan_limits[item.metric_type];\n      if (limit && item.total_usage > limit) {\n        const overage_amount = item.total_usage - limit;\n        const overage_cost = overage_amount * 0.0002; // Overage rate\n        overages.push({\n          metric_type: item.metric_type,\n          limit: limit,\n          usage: item.total_usage,\n          overage_amount: overage_amount,\n          overage_cost: overage_cost\n        });\n      }\n    }\n    \n    const overage_cost = overages.reduce((sum, item) => sum + item.overage_cost, 0);\n    const final_total = total_cost + overage_cost;\n    \n    return {\n      tenant_id: tenant.id,\n      tenant_name: tenant.name,\n      billing_period: billing_period,\n      usage_items: usage_items,\n      overages: overages,\n      subtotal: total_cost,\n      overage_total: overage_cost,\n      total_amount: final_total,\n      currency: 'USD',\n      invoice_date: $now.format('YYYY-MM-DD'),\n      due_date: $now.add(30, 'days').format('YYYY-MM-DD')\n    };\n  })()\n}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "calculate-invoice",
+      "name": "Calculate Invoice",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1120, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HASURA_GRAPHQL_ENDPOINT }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-hasura-admin-secret",
+              "value": "={{ $env.HASURA_ADMIN_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "mutation CreateInvoice($tenant_id: String!, $billing_period: String!, $invoice_data: jsonb!, $subtotal: Float!, $overage_total: Float!, $total_amount: Float!, $invoice_date: date!, $due_date: date!) {\n  insert_invoices_one(object: {\n    tenant_id: $tenant_id,\n    billing_period: $billing_period,\n    invoice_data: $invoice_data,\n    subtotal: $subtotal,\n    overage_total: $overage_total,\n    total_amount: $total_amount,\n    currency: \"USD\",\n    invoice_date: $invoice_date,\n    due_date: $due_date,\n    status: \"pending\",\n    created_at: \"now()\"\n  }, on_conflict: {\n    constraint: invoices_tenant_id_billing_period_key,\n    update_columns: [invoice_data, subtotal, overage_total, total_amount, due_date, updated_at]\n  }) {\n    id\n    invoice_number\n    total_amount\n  }\n}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ {\n  \"tenant_id\": $json.invoice_data.tenant_id,\n  \"billing_period\": $json.invoice_data.billing_period,\n  \"invoice_data\": $json.invoice_data,\n  \"subtotal\": $json.invoice_data.subtotal,\n  \"overage_total\": $json.invoice_data.overage_total,\n  \"total_amount\": $json.invoice_data.total_amount,\n  \"invoice_date\": $json.invoice_data.invoice_date,\n  \"due_date\": $json.invoice_data.due_date\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-invoice",
+      "name": "Create Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}/send-notification",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "tenant_id",
+              "value": "={{ $('Calculate Invoice').item.json.invoice_data.tenant_id }}"
+            },
+            {
+              "name": "notification_type",
+              "value": "billing"
+            },
+            {
+              "name": "message",
+              "value": "Monthly invoice generated for {{ $('Calculate Invoice').item.json.invoice_data.billing_period }}: ${{ $('Calculate Invoice').item.json.invoice_data.total_amount.toFixed(2) }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ {\n  \"invoice_number\": $json.data.insert_invoices_one.invoice_number,\n  \"total_amount\": $('Calculate Invoice').item.json.invoice_data.total_amount,\n  \"billing_period\": $('Calculate Invoice').item.json.invoice_data.billing_period,\n  \"due_date\": $('Calculate Invoice').item.json.invoice_data.due_date,\n  \"overage_total\": $('Calculate Invoice').item.json.invoice_data.overage_total\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-invoice-notification",
+      "name": "Send Invoice Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 500]
+    }
+  ],
+  "connections": {
+    "Hourly Aggregation": {
+      "main": [
+        [
+          {
+            "node": "Get Active Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Billing": {
+      "main": [
+        [
+          {
+            "node": "Get Tenants for Billing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Tenants": {
+      "main": [
+        [
+          {
+            "node": "Split Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Tenants": {
+      "main": [
+        [
+          {
+            "node": "Prepare Aggregation Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Aggregation Parameters": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Hourly Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Hourly Usage": {
+      "main": [
+        [
+          {
+            "node": "Calculate Hourly Totals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Hourly Totals": {
+      "main": [
+        [
+          {
+            "node": "Split Hourly Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Hourly Metrics": {
+      "main": [
+        [
+          {
+            "node": "Store Hourly Aggregation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Hourly Aggregation": {
+      "main": [
+        [
+          {
+            "node": "Split Hourly Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tenants for Billing": {
+      "main": [
+        [
+          {
+            "node": "Split Billing Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Billing Tenants": {
+      "main": [
+        [
+          {
+            "node": "Get Monthly Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Monthly Usage": {
+      "main": [
+        [
+          {
+            "node": "Calculate Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Invoice": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice": {
+      "main": [
+        [
+          {
+            "node": "Send Invoice Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Invoice Notification": {
+      "main": [
+        [
+          {
+            "node": "Split Billing Tenants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["billing", "aggregation", "invoices", "monthly", "hourly", "multi-tenant"],
+  "triggerCount": 2,
+  "updatedAt": "2024-07-13T00:00:00.000Z",
+  "versionId": "1"
+}

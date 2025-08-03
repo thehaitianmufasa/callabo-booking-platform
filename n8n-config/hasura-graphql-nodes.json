@@ -1,0 +1,317 @@
+{
+  "name": "Hasura GraphQL Node Configurations",
+  "version": "1.0.0", 
+  "description": "GraphQL node configurations for Hasura integration with multi-tenant support",
+  
+  "node_templates": {
+    "get_tenant_projects": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "query",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "query GetTenantProjects($tenant_id: uuid!, $limit: Int = 20) {\n  projects(\n    where: {tenant_id: {_eq: $tenant_id}, status: {_neq: \"archived\"}}\n    order_by: {updated_at: desc}\n    limit: $limit\n  ) {\n    id\n    name\n    description\n    status\n    project_type\n    tech_stack\n    created_at\n    updated_at\n    created_by\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}",
+          "limit": 20
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "create_project_mutation": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation CreateProject($object: projects_insert_input!) {\n  insert_projects_one(object: $object) {\n    id\n    name\n    description\n    status\n    tenant_id\n    created_by\n    created_at\n  }\n}",
+        "variables": {
+          "object": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "created_by": "={{ $json.user_id }}",
+            "name": "={{ $json.project_name }}",
+            "description": "={{ $json.description }}",
+            "project_type": "={{ $json.project_type || 'web-app' }}",
+            "tech_stack": "={{ $json.tech_stack }}",
+            "prd_content": "={{ $json.prd_content }}",
+            "status": "initializing"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "update_user_onboarding": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation UpdateUserOnboarding($user_id: uuid!, $tenant_id: uuid!, $updates: user_onboarding_set_input!) {\n  update_user_onboarding(\n    where: {user_id: {_eq: $user_id}, tenant_id: {_eq: $tenant_id}}\n    _set: $updates\n  ) {\n    affected_rows\n    returning {\n      id\n      current_step\n      completion_percentage\n      status\n      checklist\n      updated_at\n    }\n  }\n}",
+        "variables": {
+          "user_id": "={{ $json.user_id }}",
+          "tenant_id": "={{ $json.tenant_id }}",
+          "updates": {
+            "current_step": "={{ $json.current_step }}",
+            "completion_percentage": "={{ $json.completion_percentage }}",
+            "status": "={{ $json.status }}",
+            "checklist": "={{ $json.checklist }}",
+            "last_email_sent": "={{ $json.last_email_sent || new Date().toISOString() }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "get_workflow_executions": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "query",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "query GetWorkflowExecutions($tenant_id: uuid!, $workflow_id: uuid!, $limit: Int = 50) {\n  workflow_executions(\n    where: {tenant_id: {_eq: $tenant_id}, workflow_id: {_eq: $workflow_id}}\n    order_by: {started_at: desc}\n    limit: $limit\n  ) {\n    id\n    n8n_execution_id\n    status\n    started_at\n    completed_at\n    execution_time_ms\n    error_message\n    input_data\n    output_data\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}",
+          "workflow_id": "={{ $json.workflow_id }}",
+          "limit": 50
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "record_workflow_execution": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation RecordWorkflowExecution($object: workflow_executions_insert_input!) {\n  insert_workflow_executions_one(object: $object) {\n    id\n    n8n_execution_id\n    status\n    started_at\n  }\n}",
+        "variables": {
+          "object": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "workflow_id": "={{ $json.workflow_id }}",
+            "triggered_by": "={{ $json.triggered_by }}",
+            "n8n_execution_id": "={{ $json.n8n_execution_id }}",
+            "input_data": "={{ $json.input_data }}",
+            "status": "running",
+            "started_at": "={{ new Date().toISOString() }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "update_workflow_execution": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation UpdateWorkflowExecution($execution_id: uuid!, $updates: workflow_executions_set_input!) {\n  update_workflow_executions_by_pk(\n    pk_columns: {id: $execution_id}\n    _set: $updates\n  ) {\n    id\n    status\n    completed_at\n    execution_time_ms\n    output_data\n    error_message\n  }\n}",
+        "variables": {
+          "execution_id": "={{ $json.execution_id }}",
+          "updates": {
+            "status": "={{ $json.status }}",
+            "completed_at": "={{ $json.completed_at || new Date().toISOString() }}",
+            "execution_time_ms": "={{ $json.execution_time_ms }}",
+            "output_data": "={{ $json.output_data }}",
+            "error_message": "={{ $json.error_message }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "get_tenant_users": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "query",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "query GetTenantUsers($tenant_id: uuid!) {\n  tenant_users(\n    where: {tenant_id: {_eq: $tenant_id}, status: {_eq: \"active\"}}\n  ) {\n    id\n    role\n    joined_at\n    user {\n      id\n      email\n      first_name\n      last_name\n      status\n      last_login_at\n    }\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}"
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "create_audit_log": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation CreateAuditLog($object: audit_logs_insert_input!) {\n  insert_audit_logs_one(object: $object) {\n    id\n    action\n    resource_type\n    created_at\n  }\n}",
+        "variables": {
+          "object": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "user_id": "={{ $json.user_id }}",
+            "action": "={{ $json.action }}",
+            "resource_type": "={{ $json.resource_type }}",
+            "resource_id": "={{ $json.resource_id }}",
+            "old_values": "={{ $json.old_values }}",
+            "new_values": "={{ $json.new_values }}",
+            "ip_address": "={{ $json.ip_address }}",
+            "user_agent": "={{ $json.user_agent }}",
+            "metadata": "={{ $json.metadata }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "track_usage_metric": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "mutation",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_ENDPOINT}",
+        "query": "mutation TrackUsageMetric($object: usage_metrics_insert_input!) {\n  insert_usage_metrics_one(object: $object) {\n    id\n    metric_type\n    metric_name\n    value\n    timestamp\n  }\n}",
+        "variables": {
+          "object": {
+            "tenant_id": "={{ $json.tenant_id }}",
+            "user_id": "={{ $json.user_id }}",
+            "metric_type": "={{ $json.metric_type }}",
+            "metric_name": "={{ $json.metric_name }}",
+            "value": "={{ $json.value }}",
+            "dimensions": "={{ $json.dimensions }}",
+            "timestamp": "={{ $json.timestamp || new Date().toISOString() }}",
+            "date": "={{ $json.date || new Date().toISOString().split('T')[0] }}"
+          }
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    }
+  },
+
+  "subscription_templates": {
+    "project_status_updates": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "subscription",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_WS_ENDPOINT}",
+        "query": "subscription ProjectStatusUpdates($tenant_id: uuid!) {\n  projects(\n    where: {tenant_id: {_eq: $tenant_id}}\n  ) {\n    id\n    name\n    status\n    updated_at\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}"
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "workflow_execution_updates": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "subscription",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_WS_ENDPOINT}",
+        "query": "subscription WorkflowExecutionUpdates($tenant_id: uuid!) {\n  workflow_executions(\n    where: {tenant_id: {_eq: $tenant_id}}\n    order_by: {started_at: desc}\n    limit: 10\n  ) {\n    id\n    workflow_id\n    status\n    started_at\n    completed_at\n    error_message\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}"
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    },
+
+    "user_onboarding_progress": {
+      "node_type": "n8n-nodes-base.graphql",
+      "operation": "subscription",
+      "configuration": {
+        "endpoint": "${HASURA_GRAPHQL_WS_ENDPOINT}",
+        "query": "subscription UserOnboardingProgress($tenant_id: uuid!) {\n  user_onboarding(\n    where: {tenant_id: {_eq: $tenant_id}, status: {_in: [\"started\", \"in_progress\"]}}\n  ) {\n    id\n    user_id\n    current_step\n    completion_percentage\n    status\n    checklist\n    updated_at\n    user {\n      email\n      first_name\n    }\n  }\n}",
+        "variables": {
+          "tenant_id": "={{ $json.tenant_id }}"
+        },
+        "headers": {
+          "x-hasura-admin-secret": "${HASURA_ADMIN_SECRET}",
+          "x-hasura-role": "admin"
+        }
+      }
+    }
+  },
+
+  "helper_functions": {
+    "extract_tenant_context": {
+      "description": "Extract tenant context from webhook headers or JWT token",
+      "javascript": "// Extract tenant ID from various sources\nconst getTenantId = () => {\n  // From webhook headers\n  if ($input.item.json.headers && $input.item.json.headers['x-hasura-tenant-id']) {\n    return $input.item.json.headers['x-hasura-tenant-id'];\n  }\n  \n  // From JWT claims\n  if ($input.item.json.jwt_claims && $input.item.json.jwt_claims.tenant_id) {\n    return $input.item.json.jwt_claims.tenant_id;\n  }\n  \n  // From request body\n  if ($input.item.json.tenant_id) {\n    return $input.item.json.tenant_id;\n  }\n  \n  throw new Error('Tenant ID not found in request context');\n};\n\nreturn {\n  json: {\n    ...$input.item.json,\n    tenant_id: getTenantId()\n  }\n};"
+    },
+
+    "validate_tenant_access": {
+      "description": "Validate user has access to tenant",
+      "javascript": "// Validate tenant access\nconst validateAccess = async () => {\n  const userId = $input.item.json.user_id;\n  const tenantId = $input.item.json.tenant_id;\n  \n  if (!userId || !tenantId) {\n    throw new Error('Missing user_id or tenant_id');\n  }\n  \n  // This would typically query the database to check access\n  // For now, we'll assume validation is handled by RLS policies\n  return true;\n};\n\nif (await validateAccess()) {\n  return $input.item;\n} else {\n  throw new Error('Access denied to tenant');\n}"
+    },
+
+    "format_graphql_error": {
+      "description": "Format GraphQL errors for consistent error handling",
+      "javascript": "// Format GraphQL errors\nconst formatGraphQLError = (error) => {\n  if (error.response && error.response.body && error.response.body.errors) {\n    const graphqlErrors = error.response.body.errors;\n    return {\n      type: 'GraphQL Error',\n      message: graphqlErrors[0].message,\n      errors: graphqlErrors,\n      extensions: graphqlErrors[0].extensions\n    };\n  }\n  \n  return {\n    type: 'Network Error',\n    message: error.message,\n    stack: error.stack\n  };\n};\n\nreturn {\n  json: {\n    error: formatGraphQLError($input.item.json.error),\n    timestamp: new Date().toISOString(),\n    workflow_execution_id: $workflow.id\n  }\n};"
+    }
+  },
+
+  "error_handling": {
+    "retry_policies": {
+      "default": {
+        "max_retries": 3,
+        "retry_delay_ms": 1000,
+        "exponential_backoff": true,
+        "retry_on_status_codes": [500, 502, 503, 504, 429]
+      },
+      "subscription": {
+        "max_retries": 5,
+        "retry_delay_ms": 2000,
+        "exponential_backoff": true,
+        "reconnect_on_failure": true
+      }
+    },
+    
+    "circuit_breaker": {
+      "enabled": true,
+      "failure_threshold": 5,
+      "recovery_timeout_ms": 30000,
+      "monitor_window_ms": 60000
+    }
+  },
+
+  "performance_optimization": {
+    "query_caching": {
+      "enabled": true,
+      "cache_duration_ms": 300000,
+      "cache_keys": ["tenant_id", "user_id"]
+    },
+    
+    "connection_pooling": {
+      "max_connections": 10,
+      "idle_timeout_ms": 30000,
+      "connection_timeout_ms": 5000
+    },
+    
+    "batch_operations": {
+      "enabled": true,
+      "max_batch_size": 100,
+      "batch_timeout_ms": 1000
+    }
+  }
+}
