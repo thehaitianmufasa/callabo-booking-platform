@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-system bg-callabo-gray text-black;
+  }
+}
+
+@layer components {
+  .callabo-card {
+    @apply bg-white rounded-callabo p-6 shadow-callabo;
+  }
+  
+  .callabo-button {
+    @apply bg-black text-white px-6 py-3 rounded-lg font-semibold 
+           transition-transform hover:transform hover:-translate-y-0.5;
+  }
+  
+  .callabo-input {
+    @apply w-full px-4 py-3 border border-callabo-gray-dark rounded-lg
+           focus:outline-none focus:border-black transition-colors;
+  }
+  
+  .status-badge {
+    @apply inline-flex px-3 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .status-available {
+    @apply bg-green-100 text-green-800;
+  }
+  
+  .status-booked {
+    @apply bg-red-100 text-red-800;
+  }
+}

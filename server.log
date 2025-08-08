@@ -1,0 +1,114 @@
+
+> dev
+> concurrently "npm run dev:frontend" "npm run dev:backend"
+
+[1] 
+[1] > dev:backend
+[1] > cd backend && npm run dev
+[1] 
+[0] 
+[0] > dev:frontend
+[0] > cd frontend && npm run dev
+[0] 
+[0] 
+[0] > callabo-frontend@0.1.0 dev
+[0] > next dev
+[0] 
+[1] 
+[1] > callabo-backend@0.1.0 dev
+[1] > nodemon server.js
+[1] 
+[1] [33m[nodemon] 3.1.10[39m
+[1] [33m[nodemon] to restart at any time, enter `rs`[39m
+[1] [33m[nodemon] watching path(s): *.*[39m
+[1] [33m[nodemon] watching extensions: js,mjs,cjs,json[39m
+[1] [32m[nodemon] starting `node server.js`[39m
+[1] node:events:502
+[1]       throw er; // Unhandled 'error' event
+[1]       ^
+[1] 
+[1] Error: listen EADDRINUSE: address already in use :::3001
+[1]     at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+[1]     at listenInCluster (node:net:1965:12)
+[1]     at Server.listen (node:net:2067:7)
+[1]     at Function.listen (/Users/mufasa/callabo-booking-platform/node_modules/express/lib/application.js:635:24)
+[1]     at file:///Users/mufasa/callabo-booking-platform/backend/server.js:60:5
+[1]     at ModuleJob.run (node:internal/modules/esm/module_job:263:25)
+[1]     at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+[1]     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+[1] Emitted 'error' event on Server instance at:
+[1]     at emitErrorNT (node:net:1944:8)
+[1]     at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+[1]   code: 'EADDRINUSE',
+[1]   errno: -48,
+[1]   syscall: 'listen',
+[1]   address: '::',
+[1]   port: 3001
+[1] }
+[1] 
+[1] Node.js v20.19.2
+[1] [31m[nodemon] app crashed - waiting for file changes before starting...[39m
+[0]   ▲ Next.js 14.2.25
+[0]   - Local:        http://localhost:3000
+[0]   - Environments: .env.local
+[0] 
+[0]  ✓ Starting...
+[0]  ✓ Ready in 2.3s
+[0]  ○ Compiling / ...
+[0]  ✓ Compiled / in 7.2s (1104 modules)
+[0]  GET / 200 in 7713ms
+[0]  ○ Compiling /api/availability/[year]/[month] ...
+[0]  ✓ Compiled /api/availability/[year]/[month] in 3.7s (730 modules)
+[0]  GET /api/availability/2025/8 200 in 5223ms
+[0]  GET /api/availability/2025/8 200 in 348ms
+[0]  ○ Compiling /profile ...
+[0]  ✓ Compiled /profile in 752ms (1101 modules)
+[0]  GET /profile?_rsc=xglo9 200 in 111ms
+[0]  ✓ Compiled /api/availability/[year]/[month] in 255ms (734 modules)
+[0]  GET /api/availability/2025/8 200 in 1037ms
+[0]  GET /api/availability/2025/8 200 in 442ms
+[0]  ✓ Compiled in 1313ms (1101 modules)
+[0]  GET /?_rsc=r3yhw 200 in 196ms
+[0]  ✓ Compiled in 1677ms (1101 modules)
+[0]  GET /?_rsc=r3yhw 200 in 152ms
+[0]  ✓ Compiled /api/availability/[year]/[month] in 287ms (734 modules)
+[0]  GET /api/availability/2025/8 200 in 1184ms
+[0]  ○ Compiling /bookings ...
+[0]  ✓ Compiled /bookings in 684ms (1166 modules)
+[0]  GET /api/availability/2025/8 200 in 779ms
+[0]  ✓ Compiled /analytics in 280ms (1168 modules)
+[0]  GET /api/availability/2025/8 200 in 491ms
+[0]  GET /api/availability/2025/8 200 in 412ms
+[0]  ✓ Compiled in 1522ms (1172 modules)
+[0]  GET /?_rsc=r3yhw 200 in 166ms
+[0]  ✓ Compiled in 1196ms (1113 modules)
+[0]  GET /?_rsc=r3yhw 200 in 183ms
+[0]  ✓ Compiled in 738ms (1113 modules)
+[0]  GET /?_rsc=r3yhw 200 in 153ms
+[0]  ✓ Compiled in 629ms (1113 modules)
+[0]  GET /?_rsc=r3yhw 200 in 105ms
+[0]  ✓ Compiled in 1003ms (1113 modules)
+[0]  GET /?_rsc=r3yhw 200 in 153ms
+[0]  GET / 200 in 207ms
+[0]  ○ Compiling /api/availability/[year]/[month] ...
+[0]  ✓ Compiled /api/availability/[year]/[month] in 524ms (742 modules)
+[0]  GET /api/availability/2025/8 200 in 1264ms
+[0]  GET /api/availability/2025/8 200 in 405ms
+[0]  ○ Compiling /_not-found ...
+[0]  ✓ Compiled /_not-found in 1302ms (1102 modules)
+[0]  DELETE /api/bookings/clear 404 in 1597ms
+[0]  ✓ Compiled in 2.2s (1116 modules)
+[0]  GET /?_rsc=r3yhw 200 in 2010ms
+[0]  GET /?_rsc=r3yhw 200 in 26ms
+[0]  ✓ Compiled /api/bookings/clear in 286ms (743 modules)
+[0]  DELETE /api/bookings/clear 200 in 683ms
+[0]  ✓ Compiled in 181ms (448 modules)
+[0]  ✓ Compiled in 706ms (1102 modules)
+[0]  GET /?_rsc=r3yhw 200 in 830ms
+[0]  GET /?_rsc=r3yhw 200 in 21ms
+[0]  GET /?_rsc=r3yhw 200 in 23ms
+[0]  GET / 200 in 249ms
+[0]  ○ Compiling /api/availability/[year]/[month] ...
+[0]  ✓ Compiled /api/availability/[year]/[month] in 540ms (743 modules)
+[0]  GET /api/availability/2025/8 200 in 1195ms
+[0]  GET /api/availability/2025/8 200 in 387ms

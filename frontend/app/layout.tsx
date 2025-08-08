@@ -1,5 +1,9 @@
 import { ClerkProvider } from '@clerk/nextjs'
+import { Inter } from 'next/font/google'
 import './globals.css'
+import MobileNav from '@/components/MobileNav'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export default function RootLayout({
   children,
@@ -9,7 +13,22 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body>{children}</body>
+        <body className={inter.className} style={{margin: 0, padding: 0, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'}}>
+          <div style={{
+            minHeight: '100vh', 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: '#333'
+          }}>
+            <div style={{
+              maxWidth: '1200px',
+              margin: '0 auto',
+              padding: '20px 20px 100px 20px'
+            }}>
+              {children}
+            </div>
+            <MobileNav />
+          </div>
+        </body>
       </html>
     </ClerkProvider>
   )
