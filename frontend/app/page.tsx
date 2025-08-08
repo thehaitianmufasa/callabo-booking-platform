@@ -11,8 +11,8 @@ import { useUser } from '@clerk/nextjs'
 export default function Home() {
   const { user } = useUser()
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [bookings, setBookings] = useState([])
-  const [investors, setInvestors] = useState([])
+  const [bookings, setBookings] = useState<any[]>([])
+  const [investors, setInvestors] = useState<any[]>([])
   const [showProfile, setShowProfile] = useState(true)
   const [showMessages, setShowMessages] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)

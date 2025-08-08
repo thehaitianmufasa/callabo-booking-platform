@@ -112,3 +112,7 @@
 [0]  ✓ Compiled /api/availability/[year]/[month] in 540ms (743 modules)
 [0]  GET /api/availability/2025/8 200 in 1195ms
 [0]  GET /api/availability/2025/8 200 in 387ms
+[0]  ✓ Compiled in 859ms (446 modules)
+[0]  GET /?_rsc=r3yhw 200 in 164ms
+[0]  ✓ Compiled in 2.5s (1113 modules)
+[0]  GET /?_rsc=r3yhw 200 in 201ms
