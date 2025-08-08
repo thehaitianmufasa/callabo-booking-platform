@@ -115,8 +115,42 @@ export default function AnalyticsPage() {
       <div style={{
         textAlign: 'center',
         padding: '40px 20px 20px',
-        color: 'white'
+        color: 'white',
+        position: 'relative'
       }}>
+        {/* Back Button */}
+        <button
+          onClick={() => window.history.back()}
+          style={{
+            position: 'absolute',
+            left: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(255,255,255,0.2)',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '12px',
+            color: 'white',
+            cursor: 'pointer',
+            fontSize: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s ease',
+            backdropFilter: 'blur(10px)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.3)'
+            e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.2)'
+            e.currentTarget.style.transform = 'translateY(-50%) scale(1)'
+          }}
+        >
+          ←
+        </button>
+        
         <h1 style={{
           fontSize: '28px',
           fontWeight: '700',
