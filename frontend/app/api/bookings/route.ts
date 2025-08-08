@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Create the booking
-    const bookingData = {
+    const bookingData: any = {
       investor_id: investor_id || null,
       start_date,
       end_date,
