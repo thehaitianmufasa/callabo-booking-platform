@@ -102,7 +102,7 @@ export default function Home() {
           letterSpacing: '4px',
           margin: '0 0 8px 0'
         }}>
-          CALLABO
+          COLLABO
         </h1>
         <p style={{
           fontSize: '16px',
