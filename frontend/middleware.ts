@@ -5,14 +5,14 @@ export default authMiddleware({
   // Routes that don't require authentication
   publicRoutes: [
     '/',
-    '/api/test'
+    '/api/test',
+    '/sign-in',
+    '/sign-up'
   ],
   // API routes that should be protected but handled internally
   afterAuth(auth, req, evt) {
     // Allow API routes to handle their own authentication internally
-    if (req.nextUrl.pathname.startsWith('/api/')) {
-      return
-    }
+    return
   }
 })
 
