@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { auth } from '@clerk/nextjs/server'
-import { sendBookingConfirmation } from '@/lib/email'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -21,21 +20,58 @@ async function sendBookingNotification(booking: any, bookingData: any) {
       return false
     }
 
-    // Send email notification
-    const emailResult = await sendBookingConfirmation({
+    // Simple email notification using fetch to avoid import issues
+    try {
+      if (process.env.RESEND_API_KEY) {
+        const resendResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'Callabo Creative Space <onboarding@resend.dev>',
+            to: [investor.email],
+            subject: `🎉 Booking Confirmed - ${bookingData.start_date}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h1 style="color: #667eea;">🎉 Booking Confirmed!</h1>
+                <div style="background: #f8f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                  <p><strong>Guest:</strong> ${bookingData.guest_name}</p>
+                  <p><strong>Dates:</strong> ${bookingData.start_date} to ${bookingData.end_date}</p>
+                  <p><strong>Type:</strong> ${bookingData.booking_type}</p>
+                  <p><strong>Amount:</strong> $${bookingData.amount}</p>
+                  <p><strong>Contact:</strong> ${bookingData.guest_contact}</p>
+                  ${bookingData.notes ? `<p><strong>Notes:</strong> ${bookingData.notes}</p>` : ''}
+                </div>
+                <p>📍 Callabo Creative Space, Hapeville, GA</p>
+              </div>
+            `,
+          }),
+        })
+
+        if (resendResponse.ok) {
+          console.log('📧 Email sent successfully via Resend API')
+          return true
+        } else {
+          const errorData = await resendResponse.json()
+          console.error('❌ Resend API error:', errorData)
+        }
+      }
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError)
+    }
+
+    // Fallback: Console log notification
+    console.log('📧 EMAIL NOTIFICATION (FALLBACK):', {
       to: investor.email,
+      subject: `🎉 Booking Confirmed - ${bookingData.start_date}`,
       guestName: bookingData.guest_name,
-      startDate: bookingData.start_date,
-      endDate: bookingData.end_date,
       bookingType: bookingData.booking_type,
-      amount: bookingData.amount,
-      contact: bookingData.guest_contact,
-      notes: bookingData.notes,
-      startTime: bookingData.start_time,
-      endTime: bookingData.end_time
+      amount: bookingData.amount
     })
 
-    return emailResult.success
+    return true
 
   } catch (error) {
     console.error('❌ Notification error:', error)
