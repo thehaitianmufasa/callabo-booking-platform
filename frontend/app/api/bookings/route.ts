@@ -167,33 +167,47 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { start_date, end_date, guest_name, guest_contact, booking_type, notes, start_time, end_time } = body
     
-    // Get the correct investor_id from the authenticated user
+    // Get or create the investor record for the authenticated user
     let investor = null
-    let investorError = null
     
-    // Try to find the investor, with a retry in case sync just happened
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { data, error } = await supabase
+    // First, try to find existing investor
+    const { data: existingInvestor, error: findError } = await supabase
+      .from('callabo_investors')
+      .select('id')
+      .eq('clerk_user_id', userId)
+      .single()
+    
+    if (existingInvestor) {
+      investor = existingInvestor
+    } else {
+      // If not found, create a new investor record automatically
+      console.log('Creating new investor record for user:', userId)
+      
+      // Get user details from the booking form (guest_name can be used as fallback)
+      const { data: newInvestor, error: createError } = await supabase
         .from('callabo_investors')
+        .insert({
+          clerk_user_id: userId,
+          name: guest_name || 'Investor',
+          email: guest_contact || 'investor@callabo.com',
+          phone: null,
+          nights_used: 0,
+          quarter_start: new Date().toISOString().split('T')[0]
+        })
         .select('id')
-        .eq('clerk_user_id', userId)
         .single()
       
-      investor = data
-      investorError = error
-      
-      if (investor) break
-      
-      // If not found on first attempt, wait a bit and retry
-      if (attempt < 2) {
-        console.log(`Attempt ${attempt + 1}: Investor not found, retrying...`)
-        await new Promise(resolve => setTimeout(resolve, 1000))
+      if (createError) {
+        console.error('Error creating investor:', createError)
+        return NextResponse.json({ error: 'Failed to create investor record' }, { status: 500 })
       }
+      
+      investor = newInvestor
     }
 
-    if (investorError || !investor) {
-      console.error('Error finding investor after retries:', investorError)
-      return NextResponse.json({ error: 'User not found in investors table. Please refresh the page and try again.' }, { status: 404 })
+    if (!investor) {
+      console.error('Could not get or create investor record')
+      return NextResponse.json({ error: 'Failed to process user account' }, { status: 500 })
     }
 
     const investor_id = investor.id
