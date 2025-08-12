@@ -168,15 +168,32 @@ export async function POST(request: NextRequest) {
     const { start_date, end_date, guest_name, guest_contact, booking_type, notes, start_time, end_time } = body
     
     // Get the correct investor_id from the authenticated user
-    const { data: investor, error: investorError } = await supabase
-      .from('callabo_investors')
-      .select('id')
-      .eq('clerk_user_id', userId)
-      .single()
+    let investor = null
+    let investorError = null
+    
+    // Try to find the investor, with a retry in case sync just happened
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data, error } = await supabase
+        .from('callabo_investors')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .single()
+      
+      investor = data
+      investorError = error
+      
+      if (investor) break
+      
+      // If not found on first attempt, wait a bit and retry
+      if (attempt < 2) {
+        console.log(`Attempt ${attempt + 1}: Investor not found, retrying...`)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
 
-    if (investorError) {
-      console.error('Error finding investor:', investorError)
-      return NextResponse.json({ error: 'User not found in investors table' }, { status: 404 })
+    if (investorError || !investor) {
+      console.error('Error finding investor after retries:', investorError)
+      return NextResponse.json({ error: 'User not found in investors table. Please refresh the page and try again.' }, { status: 404 })
     }
 
     const investor_id = investor.id
