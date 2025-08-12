@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
     }
     
-    // Send SMS if requested
+    // Send SMS if requested (Twilio integration - disabled for now)
+    // Uncomment this section and install twilio package when SMS is needed
+    /*
     if (send_sms && recipient_phone && twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
       try {
         const twilioClient = require('twilio')(twilioAccountSid, twilioAuthToken)
@@ -97,6 +99,7 @@ export async function POST(request: NextRequest) {
           .eq('id', savedMessage.id)
       }
     }
+    */
     
     return NextResponse.json({ 
       message: savedMessage,

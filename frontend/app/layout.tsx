@@ -11,7 +11,26 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        variables: {
+          colorPrimary: '#667eea',
+          colorBackground: '#ffffff',
+          colorText: '#333333',
+          colorTextOnPrimaryBackground: '#ffffff',
+          colorInputBackground: '#ffffff',
+          colorInputText: '#333333',
+          borderRadius: '12px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        },
+      }}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      afterSignInUrl="/"
+      afterSignUpUrl="/"
+      signInFallbackRedirectUrl="/sign-in"
+      signUpFallbackRedirectUrl="/sign-up"
+    >
       <html lang="en">
         <body className={inter.className} style={{margin: 0, padding: 0, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'}}>
           <div style={{

@@ -1,9 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { auth } from '@clerk/nextjs/server'
+import { sendBookingConfirmation } from '@/lib/email'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabase = createClient(supabaseUrl, supabaseKey)
+
+async function sendBookingNotification(booking: any, bookingData: any) {
+  try {
+    // Get the user's email from the investor record
+    const { data: investor, error: investorError } = await supabase
+      .from('callabo_investors')
+      .select('email, name')
+      .eq('id', booking.investor_id)
+      .single()
+
+    if (investorError || !investor) {
+      console.error('❌ Could not get investor email for notification:', investorError)
+      return false
+    }
+
+    // Send email notification
+    const emailResult = await sendBookingConfirmation({
+      to: investor.email,
+      guestName: bookingData.guest_name,
+      startDate: bookingData.start_date,
+      endDate: bookingData.end_date,
+      bookingType: bookingData.booking_type,
+      amount: bookingData.amount,
+      contact: bookingData.guest_contact,
+      notes: bookingData.notes,
+      startTime: bookingData.start_time,
+      endTime: bookingData.end_time
+    })
+
+    return emailResult.success
+
+  } catch (error) {
+    console.error('❌ Notification error:', error)
+    return false
+  }
+}
+
 
 // GET /api/bookings - Get all bookings with optional filters
 export async function GET(request: NextRequest) {
@@ -11,6 +50,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const year = searchParams.get('year')
     const month = searchParams.get('month')
+    const userId = searchParams.get('userId')
     
     let query = supabase
       .from('callabo_bookings')
@@ -22,6 +62,30 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('status', 'confirmed')
+    
+    // Filter by user ID if provided (for user-specific bookings)
+    if (userId) {
+      // First get the investor record for this Clerk user
+      const { data: investor, error: investorError } = await supabase
+        .from('callabo_investors')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .single()
+
+      if (investorError) {
+        console.error('Error finding investor:', investorError)
+        return NextResponse.json({ bookings: [] })
+      }
+
+      if (investor) {
+        console.log('🔍 Found investor for user', userId, '- investor ID:', investor.id)
+        query = query.eq('investor_id', investor.id)
+      } else {
+        console.log('❌ No investor found for user:', userId)
+        // User doesn't exist in investors table yet, return empty bookings
+        return NextResponse.json({ bookings: [] })
+      }
+    }
     
     // Filter by year/month if provided
     if (year && month) {
@@ -37,6 +101,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch bookings' }, { status: 500 })
     }
     
+    console.log('📊 Query result - found', bookings?.length || 0, 'bookings for user', userId)
+    if (bookings && bookings.length > 0) {
+      console.log('📅 Bookings data:', bookings.map(b => ({
+        id: b.id.slice(0,8),
+        start_date: b.start_date,
+        end_date: b.end_date,
+        booking_type: b.booking_type,
+        guest_name: b.guest_name
+      })))
+    }
+    
     return NextResponse.json({ bookings })
   } catch (error) {
     console.error('API Error:', error)
@@ -47,8 +122,28 @@ export async function GET(request: NextRequest) {
 // POST /api/bookings - Create a new booking
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await auth()
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
-    const { investor_id, start_date, end_date, guest_name, guest_contact, booking_type, notes, start_time, end_time } = body
+    const { start_date, end_date, guest_name, guest_contact, booking_type, notes, start_time, end_time } = body
+    
+    // Get the correct investor_id from the authenticated user
+    const { data: investor, error: investorError } = await supabase
+      .from('callabo_investors')
+      .select('id')
+      .eq('clerk_user_id', userId)
+      .single()
+
+    if (investorError) {
+      console.error('Error finding investor:', investorError)
+      return NextResponse.json({ error: 'User not found in investors table' }, { status: 404 })
+    }
+
+    const investor_id = investor.id
     
     // Validate required fields
     if (!start_date || !end_date || !guest_name || !guest_contact || !booking_type) {
@@ -140,8 +235,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
     }
     
-    // Note: No night tracking needed - investors can book multiple times, 
-    // just limited to 3 nights maximum per individual booking
+    // Send email notification
+    try {
+      await sendBookingNotification(booking, bookingData)
+    } catch (emailError) {
+      console.error('Error sending email notification:', emailError)
+      // Don't fail the booking if email fails
+    }
     
     return NextResponse.json({ booking }, { status: 201 })
   } catch (error) {

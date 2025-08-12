@@ -20,23 +20,47 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
 
+  // Debug: Log what bookings we receive
+  console.log('📅 Calendar received bookings:', bookings?.length, bookings)
+
+
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
 
   const isBooked = (date: Date) => {
-    return bookings.some(booking => {
+    const result = bookings.some(booking => {
       const start = new Date(booking.start_date)
       const end = new Date(booking.end_date)
-      return date >= start && date <= end
+      
+      // Set all dates to same time (noon) to avoid timezone issues
+      const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0)
+      const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0, 0)
+      const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 12, 0, 0)
+      
+      const isInRange = checkDate >= startDate && checkDate <= endDate
+      
+      // Debug logging for specific dates we're testing
+      if (date.getDate() === 12 || date.getDate() === 13 || date.getDate() === 16 || date.getDate() === 30 || date.getDate() === 31) {
+        console.log(`🔍 Checking date ${date.getDate()}: ${isInRange} (${booking.guest_name}, ${booking.start_date} - ${booking.end_date})`)
+      }
+      
+      return isInRange
     })
+    return result
   }
 
   const getBookingForDate = (date: Date) => {
     return bookings.find(booking => {
       const start = new Date(booking.start_date)
       const end = new Date(booking.end_date)
-      return date >= start && date <= end
+      
+      // Set all dates to same time (noon) to avoid timezone issues
+      const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0)
+      const startDate = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0, 0)
+      const endDate = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 12, 0, 0)
+      
+      return checkDate >= startDate && checkDate <= endDate
     })
   }
 
@@ -166,9 +190,16 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
             <tr key={weekIndex}>
               {allDays.slice(weekIndex * 7, (weekIndex + 1) * 7).map(day => {
                 const booked = isBooked(day)
+                const booking = getBookingForDate(day)
                 const selected = selectedDate && day.toDateString() === selectedDate.toDateString()
                 const isCurrentMonth = isSameMonth(day, currentMonth)
                 const isAvailable = !booked && isCurrentMonth
+                
+                // Determine booking type for color coding
+                const bookingType = booking?.booking_type
+                const isFriendsFamily = bookingType === 'friend'
+                const isPersonalUse = bookingType === 'investor'
+                const isPayingClient = bookingType === 'guest'
                 
                 return (
                   <td key={day.toISOString()} style={{padding: 0, textAlign: 'center', position: 'relative'}}>
@@ -184,7 +215,13 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
                           : isAvailable 
                             ? 'linear-gradient(135deg, #4ade80, #22c55e)'
                             : booked
-                              ? '#fee2e2'
+                              ? isFriendsFamily 
+                                ? '#fef3c7'  // Yellow for Friends & Family
+                                : isPersonalUse 
+                                  ? '#e0e7ff'  // Light blue for Personal Use
+                                  : isPayingClient 
+                                    ? '#fee2e2'  // Light red for Paying Clients
+                                    : '#f3f4f6'  // Gray fallback
                               : !isCurrentMonth
                                 ? '#f9f9f9'
                                 : 'none',
@@ -203,7 +240,13 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
                           : isAvailable
                             ? 'white'
                             : booked
-                              ? '#dc2626'
+                              ? isFriendsFamily 
+                                ? '#d97706'  // Orange text for Friends & Family
+                                : isPersonalUse 
+                                  ? '#4338ca'  // Blue text for Personal Use
+                                  : isPayingClient 
+                                    ? '#dc2626'  // Red text for Paying Clients
+                                    : '#374151'  // Gray text fallback
                               : !isCurrentMonth
                                 ? '#ccc'
                                 : '#333',
@@ -222,8 +265,16 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
                             e.currentTarget.style.boxShadow = '0 6px 20px rgba(34, 197, 94, 0.4)'
                             e.currentTarget.style.transform = 'translateY(-3px)'
                           } else if (booked) {
-                            e.currentTarget.style.background = '#fecaca'
-                            e.currentTarget.style.boxShadow = '0 4px 15px rgba(220, 38, 38, 0.3)'
+                            if (isFriendsFamily) {
+                              e.currentTarget.style.background = '#fde68a'  // Darker yellow on hover
+                              e.currentTarget.style.boxShadow = '0 4px 15px rgba(217, 119, 6, 0.3)'
+                            } else if (isPersonalUse) {
+                              e.currentTarget.style.background = '#c7d2fe'  // Darker blue on hover
+                              e.currentTarget.style.boxShadow = '0 4px 15px rgba(67, 56, 202, 0.3)'
+                            } else {
+                              e.currentTarget.style.background = '#fecaca'  // Red for paying clients
+                              e.currentTarget.style.boxShadow = '0 4px 15px rgba(220, 38, 38, 0.3)'
+                            }
                           } else {
                             e.currentTarget.style.background = 'linear-gradient(135deg, #667eea20, #764ba220)'
                             e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.2)'
@@ -238,7 +289,13 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
                           } else if (isAvailable) {
                             e.currentTarget.style.boxShadow = '0 4px 15px rgba(34, 197, 94, 0.3)'
                           } else if (booked) {
-                            e.currentTarget.style.background = '#fee2e2'
+                            if (isFriendsFamily) {
+                              e.currentTarget.style.background = '#fef3c7'  // Yellow for Friends & Family
+                            } else if (isPersonalUse) {
+                              e.currentTarget.style.background = '#e0e7ff'  // Light blue for Personal Use
+                            } else {
+                              e.currentTarget.style.background = '#fee2e2'  // Light red for Paying Clients
+                            }
                             e.currentTarget.style.boxShadow = 'none'
                           } else {
                             e.currentTarget.style.background = 'none'
@@ -256,6 +313,55 @@ export default function Calendar({ onDateSelect, bookings }: CalendarProps) {
           ))}
         </tbody>
       </table>
+      
+      {/* Booking Type Legend */}
+      <div style={{
+        marginTop: '20px',
+        padding: '16px',
+        background: '#f8f9ff',
+        borderRadius: '12px',
+        display: 'flex',
+        justifyContent: 'center',
+        gap: '24px',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            background: 'linear-gradient(135deg, #4ade80, #22c55e)',
+            borderRadius: '4px'
+          }}></div>
+          <span style={{fontSize: '14px', color: '#374151'}}>Available</span>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            background: '#e0e7ff',
+            borderRadius: '4px'
+          }}></div>
+          <span style={{fontSize: '14px', color: '#374151'}}>Personal Use</span>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            background: '#fef3c7',
+            borderRadius: '4px'
+          }}></div>
+          <span style={{fontSize: '14px', color: '#374151'}}>Friends & Family</span>
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            background: '#fee2e2',
+            borderRadius: '4px'
+          }}></div>
+          <span style={{fontSize: '14px', color: '#374151'}}>Paying Client</span>
+        </div>
+      </div>
     </div>
   )
 }

@@ -43,7 +43,7 @@ export async function GET(
     // Get investors data
     const { data: investors, error: investorsError } = await supabase
       .from('callabo_investors')
-      .select('id, name, nights_used')
+      .select('id, name, email')
       .order('name')
     
     if (investorsError) {
