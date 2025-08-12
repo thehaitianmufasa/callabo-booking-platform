@@ -107,7 +107,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('💥 Error fetching data:', error)
-      console.error('💥 Error stack:', error.stack)
+      console.error('💥 Error stack:', error instanceof Error ? error.stack : 'No stack trace')
       setBookings([])
       setInvestors([])
     }

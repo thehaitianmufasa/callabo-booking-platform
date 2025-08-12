@@ -24,12 +24,8 @@ export default function RootLayout({
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         },
       }}
-      signInUrl="/sign-in"
-      signUpUrl="/sign-up"
       afterSignInUrl="/"
       afterSignUpUrl="/"
-      signInFallbackRedirectUrl="/sign-in"
-      signUpFallbackRedirectUrl="/sign-up"
     >
       <html lang="en">
         <body className={inter.className} style={{margin: 0, padding: 0, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'}}>
