@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { auth } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -158,11 +158,14 @@ export async function GET(request: NextRequest) {
 // POST /api/bookings - Create a new booking
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient()
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
     
-    if (!userId) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    
+    const userId = user.id
 
     const body = await request.json()
     const { start_date, end_date, guest_name, guest_contact, booking_type, notes, start_time, end_time } = body
@@ -174,7 +177,7 @@ export async function POST(request: NextRequest) {
     const { data: existingInvestor, error: findError } = await supabase
       .from('callabo_investors')
       .select('id')
-      .eq('clerk_user_id', userId)
+      .eq('user_id', userId)
       .single()
     
     if (existingInvestor) {
@@ -187,10 +190,10 @@ export async function POST(request: NextRequest) {
       const { data: newInvestor, error: createError } = await supabase
         .from('callabo_investors')
         .insert({
-          clerk_user_id: userId,
-          name: guest_name || 'Investor',
-          email: guest_contact || 'investor@callabo.com',
-          phone: null,
+          user_id: userId,
+          name: guest_name || user.email?.split('@')[0] || 'Investor',
+          email: guest_contact || user.email || 'investor@callabo.com',
+          phone: user.phone || null,
           nights_used: 0,
           quarter_start: new Date().toISOString().split('T')[0]
         })

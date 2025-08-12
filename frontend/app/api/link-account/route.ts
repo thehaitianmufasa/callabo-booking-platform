@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { auth } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -8,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
     
     if (!userId) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const { data: existing } = await supabase
       .from('callabo_investors')
       .select('*')
-      .eq('clerk_user_id', userId)
+      .eq('user_id', userId)
       .single()
 
     if (existing) {
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const { data: unclaimed } = await supabase
       .from('callabo_investors')
       .select('*')
-      .like('clerk_user_id', 'user_test_%')
+      .like('user_id', 'user_test_%')
 
     return NextResponse.json({ 
       message: 'Account not linked',
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
     
     if (!userId) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -64,9 +64,9 @@ export async function POST(request: NextRequest) {
     // Update the investor record to link it to this Clerk user
     const { data, error } = await supabase
       .from('callabo_investors')
-      .update({ clerk_user_id: userId })
+      .update({ user_id: userId })
       .eq('id', investorId)
-      .like('clerk_user_id', 'user_test_%') // Only allow claiming test accounts
+      .like('user_id', 'user_test_%') // Only allow claiming test accounts
       .select()
       .single()
 

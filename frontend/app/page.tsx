@@ -6,14 +6,16 @@ import BookingDetails from '@/components/BookingDetails'
 import FloatingActionButton from '@/components/FloatingActionButton'
 import UserProfile from '@/components/UserProfile'
 import MessagingPanel from '@/components/MessagingPanel'
-import { useUser, SignInButton, SignUpButton } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
+import AuthModal from '@/components/AuthModal'
 
 export default function Home() {
   console.log('🏠 Home component rendering...')
   
-  const { user, isLoaded } = useUser()
-  console.log('👤 Current user:', user?.id, user?.fullName)
-  console.log('🔑 Clerk loaded:', isLoaded, 'User signed in:', !!user)
+  const { user, loading } = useAuth()
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  console.log('👤 Current user:', user?.id, user?.email)
+  console.log('🔑 Auth loaded:', !loading, 'User signed in:', !!user)
   
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [bookings, setBookings] = useState<any[]>([])
@@ -49,9 +51,9 @@ export default function Home() {
     
     try {
       const userData = {
-        name: user.fullName || user.firstName + ' ' + user.lastName || 'User',
-        email: user.primaryEmailAddress?.emailAddress || '',
-        phone: user.primaryPhoneNumber?.phoneNumber || ''
+        name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+        email: user.email || '',
+        phone: user.phone || ''
       }
       
       await fetch('/api/users/sync', {
@@ -123,8 +125,8 @@ export default function Home() {
     window.location.href = '/bookings/new'
   }
 
-  // Show loading state while Clerk is initializing
-  if (!isLoaded) {
+  // Show loading state while auth is initializing
+  if (loading) {
     return (
       <div style={{ 
         textAlign: 'center', 
@@ -183,8 +185,9 @@ export default function Home() {
           Hapeville, GA - Creative Space Booking
         </p>
         <div style={{ display: 'flex', gap: '20px', justifyContent: 'center' }}>
-          <SignInButton mode="modal">
-            <button style={{
+          <button 
+            onClick={() => setShowAuthModal(true)}
+            style={{
               padding: '15px 30px',
               borderRadius: '25px',
               border: 'none',
@@ -196,11 +199,11 @@ export default function Home() {
               boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
               transition: 'transform 0.2s'
             }}>
-              Sign In
-            </button>
-          </SignInButton>
-          <SignUpButton mode="modal">
-            <button style={{
+            Sign In
+          </button>
+          <button 
+            onClick={() => setShowAuthModal(true)}
+            style={{
               padding: '15px 30px',
               borderRadius: '25px',
               border: '2px solid white',
@@ -213,8 +216,8 @@ export default function Home() {
             }}>
               Sign Up
             </button>
-          </SignUpButton>
         </div>
+        <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
       </div>
     )
   }
@@ -369,6 +372,9 @@ export default function Home() {
 
       {/* Floating Action Button */}
       <FloatingActionButton onClick={handleCreateBooking} />
+      
+      {/* Auth Modal (not shown when user is authenticated) */}
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </>
   )
 }

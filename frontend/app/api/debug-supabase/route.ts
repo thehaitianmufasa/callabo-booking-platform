@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { auth } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   console.log('🔍 DEBUG: Starting Supabase connection test')
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   // Test 1: Clerk Authentication
   try {
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
     debugInfo.tests.clerkAuth = {
       status: '✅ Success',
       userId: userId || 'No user authenticated',

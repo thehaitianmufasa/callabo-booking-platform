@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { auth } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -8,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
     
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const { data: existingInvestor, error: checkError } = await supabase
       .from('callabo_investors')
       .select('id')
-      .eq('clerk_user_id', userId)
+      .eq('user_id', userId)
       .single()
 
     if (checkError && checkError.code !== 'PGRST116') {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
           phone: phone || null,
           updated_at: new Date().toISOString()
         })
-        .eq('clerk_user_id', userId)
+        .eq('user_id', userId)
         .select()
         .single()
 
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       const { data: newInvestor, error: createError } = await supabase
         .from('callabo_investors')
         .insert({
-          clerk_user_id: userId,
+          user_id: userId,
           name: name || 'User',
           email: email || '',
           phone: phone || null,

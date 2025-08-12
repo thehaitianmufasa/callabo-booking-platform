@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { auth } from '@clerk/nextjs/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     console.log('RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'Present' : 'Missing')
     
     // Test Clerk auth
-    const { userId } = await auth()
+    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
     console.log('🔍 Clerk user ID:', userId)
     
     // Test Supabase connection
