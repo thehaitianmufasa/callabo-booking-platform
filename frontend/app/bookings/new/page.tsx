@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 
-export default function NewBooking() {
+function NewBookingForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useUser()
@@ -397,5 +397,30 @@ export default function NewBooking() {
         </form>
       </div>
     </div>
+  )
+}
+
+export default function NewBooking() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{
+          background: 'white',
+          borderRadius: '24px',
+          padding: '30px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.1)'
+        }}>
+          Loading...
+        </div>
+      </div>
+    }>
+      <NewBookingForm />
+    </Suspense>
   )
 }
