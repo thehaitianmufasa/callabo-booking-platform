@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 
 interface Message {
   id: string
@@ -22,21 +22,47 @@ interface Conversation {
   phoneNumber?: string
 }
 
+interface Member {
+  user_id: string
+  name: string
+  email: string
+  phone?: string
+}
+
 export default function Messaging() {
-  const { user } = useUser()
+  const { user } = useAuth()
   const [conversations, setConversations] = useState<Conversation[]>([])
   
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [showNewConversation, setShowNewConversation] = useState(false)
-  const [newPhone, setNewPhone] = useState('')
+  const [members, setMembers] = useState<Member[]>([])
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
 
   useEffect(() => {
     if (user) {
       fetchConversations()
+      fetchMembers()
     }
   }, [user])
+
+  const fetchMembers = async () => {
+    try {
+      const res = await fetch('/api/members')
+      const data = await res.json()
+      
+      if (res.ok) {
+        setMembers(data.members || [])
+      } else {
+        console.error('Failed to fetch members:', data.error)
+        setMembers([])
+      }
+    } catch (error) {
+      console.error('Error fetching members:', error)
+      setMembers([])
+    }
+  }
 
   const fetchConversations = async () => {
     try {
@@ -533,8 +559,12 @@ export default function Messaging() {
             background: 'white',
             borderRadius: '24px',
             padding: '30px',
-            width: '400px',
-            maxWidth: '90%'
+            width: '500px',
+            maxWidth: '90%',
+            maxHeight: '80vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <h3 style={{
               fontSize: '20px',
@@ -542,23 +572,94 @@ export default function Messaging() {
               margin: '0 0 20px 0',
               color: '#333'
             }}>
-              New Conversation
+              Start New Conversation
             </h3>
-            <input
-              type="tel"
-              value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              placeholder="Enter phone number (+1 555 123 4567)"
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                border: '2px solid #e8e9ff',
-                fontSize: '16px',
-                background: '#f8f9ff',
-                marginBottom: '20px'
-              }}
-            />
+            <p style={{
+              fontSize: '14px',
+              color: '#666',
+              margin: '0 0 20px 0'
+            }}>
+              Select a member to message:
+            </p>
+            
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              marginBottom: '20px'
+            }}>
+              {members.length === 0 ? (
+                <div style={{
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: '#999',
+                  fontSize: '14px'
+                }}>
+                  No other members found.
+                </div>
+              ) : (
+                members.map(member => (
+                  <div
+                    key={member.user_id}
+                    onClick={() => setSelectedMember(member)}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '12px',
+                      border: selectedMember?.user_id === member.user_id ? '2px solid #667eea' : '2px solid #f0f0f0',
+                      background: selectedMember?.user_id === member.user_id ? '#f8f9ff' : 'white',
+                      cursor: 'pointer',
+                      marginBottom: '12px',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}
+                    onMouseOver={(e) => {
+                      if (selectedMember?.user_id !== member.user_id) {
+                        e.currentTarget.style.background = '#fafafa'
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (selectedMember?.user_id !== member.user_id) {
+                        e.currentTarget.style.background = 'white'
+                      }
+                    }}
+                  >
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      flexShrink: 0
+                    }}>
+                      {member.name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <div>
+                      <div style={{
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        color: '#333',
+                        marginBottom: '4px'
+                      }}>
+                        {member.name}
+                      </div>
+                      <div style={{
+                        fontSize: '14px',
+                        color: '#666'
+                      }}>
+                        {member.email}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            
             <div style={{
               display: 'flex',
               gap: '12px',
@@ -567,7 +668,7 @@ export default function Messaging() {
               <button
                 onClick={() => {
                   setShowNewConversation(false)
-                  setNewPhone('')
+                  setSelectedMember(null)
                 }}
                 style={{
                   padding: '10px 20px',
@@ -584,21 +685,39 @@ export default function Messaging() {
               </button>
               <button
                 onClick={() => {
-                  if (newPhone) {
-                    window.location.href = `sms:${newPhone}`
+                  if (selectedMember) {
+                    // Start conversation with selected member
+                    setSelectedConversation(selectedMember.user_id)
+                    fetchMessages(selectedMember.user_id)
+                    
+                    // Add to conversations if not already there
+                    const existingConv = conversations.find(c => c.userId === selectedMember.user_id)
+                    if (!existingConv) {
+                      const newConv: Conversation = {
+                        userId: selectedMember.user_id,
+                        userName: selectedMember.name,
+                        lastMessage: '',
+                        timestamp: new Date(),
+                        unreadCount: 0,
+                        phoneNumber: selectedMember.phone
+                      }
+                      setConversations(prev => [newConv, ...prev])
+                    }
+                    
                     setShowNewConversation(false)
-                    setNewPhone('')
+                    setSelectedMember(null)
                   }
                 }}
+                disabled={!selectedMember}
                 style={{
                   padding: '10px 20px',
                   borderRadius: '12px',
                   border: 'none',
-                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                  background: selectedMember ? 'linear-gradient(135deg, #667eea, #764ba2)' : '#ccc',
                   color: 'white',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: selectedMember ? 'pointer' : 'not-allowed'
                 }}
               >
                 Start Conversation

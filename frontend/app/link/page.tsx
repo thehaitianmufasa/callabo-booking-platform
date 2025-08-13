@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 import { useRouter } from 'next/navigation'
 
 export default function LinkAccount() {
-  const { user } = useUser()
+  const { user } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [linked, setLinked] = useState(false)

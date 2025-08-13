@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 
 interface Analytics {
   totalBookings: number
@@ -15,7 +15,7 @@ interface Analytics {
 }
 
 export default function AnalyticsPage() {
-  const { user } = useUser()
+  const { user } = useAuth()
   const [analytics, setAnalytics] = useState<Analytics>({
     totalBookings: 0,
     totalNights: 0,

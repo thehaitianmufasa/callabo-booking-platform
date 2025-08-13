@@ -1,6 +1,6 @@
 'use client'
 
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 import { useState, useEffect } from 'react'
 
 interface UserProfileData {
@@ -11,7 +11,7 @@ interface UserProfileData {
 }
 
 export default function UserProfile() {
-  const { user } = useUser()
+  const { user } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [profileData, setProfileData] = useState<UserProfileData>({
     name: '',
@@ -34,25 +34,29 @@ export default function UserProfile() {
   const fetchUserProfileFromDatabase = async () => {
     try {
       // Always try database first, but ensure sync exists first
+      // Don't sync phone from auth object - only sync name and email
       await fetch('/api/users/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          name: user?.fullName || user?.firstName + ' ' + user?.lastName || '',
-          email: user?.primaryEmailAddress?.emailAddress || '',
-          phone: user?.primaryPhoneNumber?.phoneNumber || ''
+          name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || '',
+          email: user?.email || ''
+          // Note: phone is intentionally excluded here to prevent overwriting database phone with empty value
         })
       })
 
       // Now get the profile from database
-      const response = await fetch(`/api/users/profile?userId=${user?.id}`)
+      const response = await fetch(`/api/users/profile?userId=${user?.id}`, {
+        credentials: 'include'
+      })
       if (response.ok) {
         const dbProfile = await response.json()
         if (dbProfile.investor) {
           setProfileData({
-            name: dbProfile.investor.name || user?.fullName || user?.firstName + ' ' + user?.lastName || '',
-            email: dbProfile.investor.email || user?.primaryEmailAddress?.emailAddress || '',
-            phone: dbProfile.investor.phone || user?.primaryPhoneNumber?.phoneNumber || '',
+            name: dbProfile.investor.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '',
+            email: dbProfile.investor.email || user?.email || '',
+            phone: dbProfile.investor.phone || user?.phone || '',
             role: 'Investor'
           })
           return
@@ -61,17 +65,17 @@ export default function UserProfile() {
       
       // Fallback to Clerk data
       setProfileData({
-        name: user?.fullName || user?.firstName + ' ' + user?.lastName || '',
-        email: user?.primaryEmailAddress?.emailAddress || '',
-        phone: user?.primaryPhoneNumber?.phoneNumber || '',
+        name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || '',
+        email: user?.email || '',
+        phone: user?.phone || '',
         role: 'Investor'
       })
     } catch (error) {
       console.error('Error fetching profile:', error)
       setProfileData({
-        name: user?.fullName || user?.firstName + ' ' + user?.lastName || '',
-        email: user?.primaryEmailAddress?.emailAddress || '',
-        phone: user?.primaryPhoneNumber?.phoneNumber || '',
+        name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || '',
+        email: user?.email || '',
+        phone: user?.phone || '',
         role: 'Investor'
       })
     }
@@ -79,7 +83,10 @@ export default function UserProfile() {
 
   const fetchUserStats = async () => {
     try {
-      const res = await fetch(`/api/bookings?userId=${user?.id}`)
+      console.log('🔍 UserProfile - Fetching stats for user ID:', user?.id)
+      const res = await fetch(`/api/bookings?userId=${user?.id}`, {
+        credentials: 'include'
+      })
       const data = await res.json()
       
       if (res.ok) {
@@ -121,13 +128,8 @@ export default function UserProfile() {
 
   const handleSave = async () => {
     try {
-      // Update Clerk user profile if name changed
-      if (user && profileData.name !== (user.fullName || user.firstName + ' ' + user.lastName)) {
-        await user.update({
-          firstName: profileData.name.split(' ')[0],
-          lastName: profileData.name.split(' ').slice(1).join(' ') || ''
-        })
-      }
+      // Note: With Supabase Auth, updating user metadata requires admin API
+      // For now, we'll just update the database record
 
       // Update profile data in database (for notifications)
       const updateResponse = await fetch('/api/users/sync', {
@@ -135,6 +137,7 @@ export default function UserProfile() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           name: profileData.name,
           email: profileData.email,

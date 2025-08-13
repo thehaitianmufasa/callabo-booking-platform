@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 
 interface Booking {
   id: string
@@ -16,7 +16,7 @@ interface Booking {
 }
 
 export default function BookingsPage() {
-  const { user } = useUser()
+  const { user } = useAuth()
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([])
   const [pastBookings, setPastBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)

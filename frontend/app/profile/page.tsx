@@ -1,10 +1,10 @@
 'use client'
 
-import { useUser, UserButton } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 import UserProfile from '@/components/UserProfile'
 
 export default function ProfilePage() {
-  const { user } = useUser()
+  const { user } = useAuth()
   
   return (
     <div style={{
@@ -125,24 +125,45 @@ export default function ProfilePage() {
             >
               Privacy Settings
             </button>
-            <div style={{
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: '#f8f9ff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
-              <UserButton 
-                appearance={{
-                  elements: {
-                    userButtonAvatarBox: {
-                      width: '40px',
-                      height: '40px'
-                    }
-                  }
-                }}
-              />
+            <button 
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: '#f8f9ff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#e8e9ff'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#f8f9ff'}
+              onClick={async () => {
+                try {
+                  const { supabase } = await import('@/lib/supabase')
+                  await supabase.auth.signOut()
+                  window.location.href = '/'
+                } catch (error) {
+                  console.error('Sign out error:', error)
+                }
+              }}
+            >
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: '600',
+                fontSize: '18px'
+              }}>
+                {user?.email?.[0]?.toUpperCase() || 'U'}
+              </div>
               <div>
                 <div style={{
                   fontSize: '16px',
@@ -158,7 +179,7 @@ export default function ProfilePage() {
                   Sign out or manage your account
                 </div>
               </div>
-            </div>
+            </button>
           </div>
         </div>
       </div>

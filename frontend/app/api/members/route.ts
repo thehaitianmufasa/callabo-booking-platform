@@ -16,24 +16,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user profile from database
-    const { data: investor, error } = await supabase
+    // Get all members (investors) except the current user
+    const { data: members, error } = await supabase
       .from('callabo_investors')
-      .select('id, name, email, phone, created_at, updated_at')
-      .eq('user_id', userId)
-      .single()
+      .select('user_id, name, email, phone')
+      .neq('user_id', userId)
+      .order('name')
 
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error fetching investor profile:', error)
-      return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+    if (error) {
+      console.error('Error fetching members:', error)
+      return NextResponse.json({ error: 'Failed to fetch members' }, { status: 500 })
     }
 
-    if (!investor) {
-      // User doesn't exist in database yet
-      return NextResponse.json({ investor: null }, { status: 200 })
-    }
-
-    return NextResponse.json({ investor })
+    return NextResponse.json({ members: members || [] })
   } catch (error) {
     console.error('API Error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

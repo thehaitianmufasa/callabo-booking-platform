@@ -74,9 +74,9 @@ export default function Home() {
     console.log('🚀 Starting fetchBookings for user:', user.id)
     
     try {
-      // Fetch user-specific bookings for calendar
-      console.log('📡 Making fetch request to:', `/api/bookings?userId=${user.id}`)
-      const res = await fetch(`/api/bookings?userId=${user.id}`)
+      // Fetch ALL bookings for calendar display (not user-specific)
+      console.log('📡 Making fetch request to: /api/bookings (all bookings)')
+      const res = await fetch('/api/bookings')
       console.log('📡 Response status:', res.status, res.statusText)
       
       const data = await res.json()
@@ -103,8 +103,8 @@ export default function Home() {
         // Fallback to current user only
         setInvestors([{
           id: user.id,
-          name: user.fullName || user.firstName + ' ' + user.lastName || 'User',
-          email: user.primaryEmailAddress?.emailAddress || ''
+          name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+          email: user.email || ''
         }])
       }
     } catch (error) {

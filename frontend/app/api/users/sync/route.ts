@@ -8,7 +8,9 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseClient = await createServerSupabaseClient(); const { data: { user } } = await supabaseClient.auth.getUser(); const userId = user?.id
+    const supabaseClient = await createServerSupabaseClient()
+    const { data: { user } } = await supabaseClient.auth.getUser()
+    const userId = user?.id
     
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,30 +18,52 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { name, email, phone } = body
+    console.log('🔄 Sync API - Received data:', { name, email, phone, userId })
 
-    // Check if user already exists in investors table
-    const { data: existingInvestor, error: checkError } = await supabase
+    // Check if user already exists in investors table (by user_id or email)
+    let existingInvestor = null
+    
+    // First check by user_id
+    const { data: investorByUserId, error: userIdError } = await supabase
       .from('callabo_investors')
       .select('id')
       .eq('user_id', userId)
       .single()
-
-    if (checkError && checkError.code !== 'PGRST116') {
-      console.error('Error checking existing investor:', checkError)
-      return NextResponse.json({ error: 'Failed to check user' }, { status: 500 })
+      
+    if (investorByUserId) {
+      existingInvestor = investorByUserId
+    } else {
+      // Check by email (for cases where user_id was cleared)
+      const { data: investorByEmail, error: emailError } = await supabase
+        .from('callabo_investors')
+        .select('id')
+        .eq('email', email)
+        .single()
+        
+      if (investorByEmail) {
+        console.log('🔄 Found existing investor by email, updating user_id')
+        existingInvestor = investorByEmail
+      }
     }
 
     if (existingInvestor) {
       // User already exists, update their information
+      const updateData: any = {
+        user_id: userId, // Always update user_id to current auth user
+        name: name || 'User',
+        email: email || '',
+        updated_at: new Date().toISOString()
+      }
+      
+      // Only update phone if it's provided and not empty
+      if (phone && phone.trim()) {
+        updateData.phone = phone
+      }
+      
       const { data: updatedInvestor, error: updateError } = await supabase
         .from('callabo_investors')
-        .update({
-          name: name || 'User',
-          email: email || '',
-          phone: phone || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
+        .update(updateData)
+        .eq('id', existingInvestor.id)
         .select()
         .single()
 

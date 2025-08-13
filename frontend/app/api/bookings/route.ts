@@ -101,11 +101,11 @@ export async function GET(request: NextRequest) {
     
     // Filter by user ID if provided (for user-specific bookings)
     if (userId) {
-      // First get the investor record for this Clerk user
+      // First get the investor record for this Supabase user
       const { data: investor, error: investorError } = await supabase
         .from('callabo_investors')
         .select('id')
-        .eq('clerk_user_id', userId)
+        .eq('user_id', userId)
         .single()
 
       if (investorError) {
@@ -158,11 +158,17 @@ export async function GET(request: NextRequest) {
 // POST /api/bookings - Create a new booking
 export async function POST(request: NextRequest) {
   try {
+    console.log('📝 Booking POST request received');
+    console.log('Headers:', request.headers.get('cookie'));
+    
     const supabaseClient = await createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
     
+    console.log('Auth result:', { user: user?.id, email: user?.email, error: authError });
+    
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.error('❌ Auth failed:', authError);
+      return NextResponse.json({ error: 'Unauthorized - No authenticated user found' }, { status: 401 })
     }
     
     const userId = user.id

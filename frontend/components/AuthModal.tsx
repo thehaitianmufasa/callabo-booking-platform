@@ -17,6 +17,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [otp, setOtp] = useState('')
 
   const handleSendOtp = async () => {
+    console.log('Sending OTP for:', authMode, authMode === 'phone' ? phone : email)
     setLoading(true)
     
     try {
@@ -187,7 +188,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 type="tel"
                 placeholder="Enter your phone number"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  console.log('Phone input changed:', e.target.value)
+                  setPhone(e.target.value)
+                }}
                 style={{
                   width: '100%',
                   padding: '16px',
@@ -195,8 +199,15 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   border: '2px solid #e8e9ff',
                   fontSize: '16px',
                   marginBottom: '20px',
-                  background: '#f8f9ff'
+                  background: '#f8f9ff',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  color: '#333',
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none',
+                  appearance: 'none'
                 }}
+                autoComplete="tel"
               />
             ) : (
               <input
@@ -211,8 +222,15 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                   border: '2px solid #e8e9ff',
                   fontSize: '16px',
                   marginBottom: '20px',
-                  background: '#f8f9ff'
+                  background: '#f8f9ff',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  color: '#333',
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none',
+                  appearance: 'none'
                 }}
+                autoComplete="email"
               />
             )}
 

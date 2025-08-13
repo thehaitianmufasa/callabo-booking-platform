@@ -2,12 +2,12 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useUser } from '@clerk/nextjs'
+import { useAuth } from '@/components/AuthProvider'
 
 function NewBookingForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user } = useUser()
+  const { user } = useAuth()
   const [formData, setFormData] = useState({
     start_date: '',
     end_date: '',
@@ -72,6 +72,7 @@ function NewBookingForm() {
         headers: { 
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(submitData)
       })
 
